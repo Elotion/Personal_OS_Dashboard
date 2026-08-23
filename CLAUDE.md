@@ -123,6 +123,10 @@ CREATE TABLE tasks (
   is_archived BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
+  -- completed_at TIMESTAMP does NOT exist yet -- Phase 2 migration, see below.
+  -- Set on archive / cleared on restore by PUT /api/tasks/:id the moment the
+  -- column exists; falls back gracefully (same pattern as habits.sort_order)
+  -- until then, so archiving/restoring already works either way.
 );
 
 CREATE TABLE habits (
@@ -131,58 +135,63 @@ CREATE TABLE habits (
   category TEXT,
   entity_id INTEGER REFERENCES entities(id),
   completed_today BOOLEAN DEFAULT FALSE,
+  completed_date DATE,      -- confirmed live 2026-08-23, see below
+  sort_order INTEGER,       -- confirmed live 2026-08-23, see below
   created_at TIMESTAMP DEFAULT NOW()
-  -- completed_date DATE and sort_order INTEGER do NOT exist yet, despite being
-  -- requested across three separate sessions -- see PENDING MIGRATION below.
 );
--- CORRECTION: an earlier version of this comment claimed completed_date and
--- sort_order had already been added -- they hadn't; a previous session's backend
--- fallback logic masked the failure well enough that it looked like things were
--- working. Verify directly before trusting either column exists, rather than
--- taking this file's word for it:
+-- RESOLVED 2026-08-23: completed_date and sort_order (requested across three
+-- earlier sessions) and the habit_streak table (below) are all confirmed live
+-- and working, including real cross-device sync -- verified directly, not just
+-- assumed. The CORRECTION note that used to live here (an earlier session
+-- claimed these existed when they didn't) is gone because it's no longer true,
+-- but the lesson stands for anything still marked PENDING below: verify before
+-- trusting this file, don't just take its word for it.
 --   curl -X PUT localhost:5050/api/habits/<id> -H "Content-Type: application/json" \
 --     -d '{"completed_date":"2026-01-01"}'
--- If that 400s with "column ... does not exist", it's still missing.
+-- A 400 "column ... does not exist" means something claimed live here actually isn't.
+
+CREATE TABLE habit_streak (
+  id SERIAL PRIMARY KEY,
+  count INTEGER NOT NULL DEFAULT 0,
+  last_done_date DATE
+);
+-- confirmed live 2026-08-23 -- singleton row (id=1), global (not per-habit)
+-- streak count, synced cross-device. See "Decisions" below for why it's a
+-- separate table rather than a habits column.
 
 -- ============================================================
--- PENDING MIGRATION -- run this once in the Supabase dashboard ->
--- SQL Editor (Claude cannot run DDL with the anon key it has, so this genuinely
--- needs a human to paste it in and click Run). Covers everything currently known
--- to be missing, so it only needs doing once:
+-- PENDING MIGRATION (Phase 2 of the roadmap below) -- run once in the
+-- Supabase dashboard -> SQL Editor (Claude cannot run DDL with the anon *or*
+-- service-role key -- both are data clients, not schema tools):
 --
---   ALTER TABLE habits ADD COLUMN completed_date DATE;
---   ALTER TABLE habits ADD COLUMN sort_order INTEGER;
---
---   CREATE TABLE habit_streak (
+--   CREATE TABLE habit_completions (
 --     id SERIAL PRIMARY KEY,
---     count INTEGER NOT NULL DEFAULT 0,
---     last_done_date DATE
+--     habit_id INTEGER REFERENCES habits(id) ON DELETE CASCADE,
+--     completed_at TIMESTAMP NOT NULL DEFAULT NOW()
 --   );
---   INSERT INTO habit_streak (id, count, last_done_date) VALUES (1, 0, NULL);
---   ALTER TABLE habit_streak ENABLE ROW LEVEL SECURITY;
---   CREATE POLICY "Enable all for public" ON habit_streak FOR ALL USING (true) WITH CHECK (true);
+--   ALTER TABLE habit_completions ENABLE ROW LEVEL SECURITY;
+--   CREATE POLICY "Enable all for public" ON habit_completions FOR ALL USING (true) WITH CHECK (true);
 --
--- Once this has been run, no further code changes are needed -- everything below
--- already prefers the real Supabase value the moment it's available:
+--   ALTER TABLE tasks ADD COLUMN completed_at TIMESTAMP;
+--
+-- Once run, no further code changes needed -- server.js already writes to both
+-- the moment they exist (PUT /api/habits/:id logs a habit_completions row on
+-- check / deletes it on uncheck; PUT /api/tasks/:id sets completed_at on
+-- archive / clears it on restore), and GET /api/analytics/habits +
+-- GET /api/analytics/correlation start returning real data instead of 404.
 -- ============================================================
 --
--- Until that migration runs: per-habit completion and streak count both work
--- correctly today (checking a habit off survives a refresh, resets at midnight,
--- streak increments/resets correctly) but only via the BROWSER's localStorage
--- (keys 'elo-os-habit-completions' and 'elo-os-habit-streak', both in App.js) and
--- a matching GET/PUT /api/habit-streak pair in server.js that 404s gracefully
--- until the table exists. That's a real, working stopgap -- but it's per-browser,
--- not per-account, so checking a habit off on one device won't show up on
--- another until the migration runs.
---   - transformHabit() in App.js already prefers row.completed_date over
---     localStorage when present.
---   - the /api/habit-streak fetch on load already prefers the server value over
---     the localStorage one when the table responds successfully.
---   - completed_today (the one column that already exists) is still written on
---     every toggle for whatever partial value it offers, but nothing reads it
---     back for logic -- don't trust it to mean "checked today."
---   - sort_order drives manual drag-to-reorder; without the column, reordering
---     only holds for the current browser session, same story as the above.
+-- Until that migration runs: habit_completions is a one-row-per-habit-per-day
+-- log (grain decided deliberately -- matches the existing single daily on/off
+-- toggle, not unlimited events) used for pattern analysis (hardest-to-keep
+-- habits, time-of-day-completed distribution, day-by-day habit-vs-task
+-- correlation) -- this is data infrastructure for AI insights later, not a
+-- display feature, so there's intentionally no frontend UI for it yet; it's
+-- verified directly against the API. ON DELETE CASCADE means deleting a habit
+-- also deletes its history -- accepted for now (single-user, v1), revisit if
+-- that turns out to matter. tasks.completed_at is a single column, not a log
+-- table like habits get -- a task is a one-shot thing, not recurring, so
+-- "was it done, and when" doesn't need history the way a repeating habit does.
 
 -- PENDING: profile table (Operator card's name/tagline/focus/photo) does not
 -- exist yet either. Same singleton-row pattern as habit_streak above, same
@@ -259,13 +268,11 @@ exactly this reason).
   - BRAIN's per-entity task counts
 - Entities — fetched from Supabase; drives BRAIN's cards and the id<->name lookup used
   whenever a task is created or re-categorized.
-- Habits — full CRUD (add/edit/delete all hit Supabase correctly), category set via
-  an entity dropdown (not free text). Daily-reset completion tracking and streak
-  count both work correctly and survive a refresh, but currently via localStorage
-  rather than Supabase, so they don't yet sync across different browsers/devices --
-  see PENDING MIGRATION on the `habits` table above, which covers exactly this.
-  Drag-to-reorder works within a session but doesn't persist across a refresh yet,
-  for the same reason.
+- Habits — full CRUD, category set via an entity dropdown (not free text),
+  daily-reset completion tracking, cross-device streak count, and drag-to-reorder
+  all confirmed live and syncing across devices for real as of 2026-08-23 (see the
+  RESOLVED note on the `habits` table above -- this used to say localStorage-only,
+  that's no longer true).
 - Goals (weekly + monthly) — full CRUD: add, edit text in place, delete.
 - Nutrition log — add and delete; still no editing an existing entry's macros in place.
 - Journal entries — add, edit the raw text, delete. The "AI RECAP" text and its
@@ -275,6 +282,14 @@ exactly this reason).
   click-pencil pattern as goals/habits), photo click opens the native file picker
   and displays what's chosen. All of it persists across a refresh today, but via
   localStorage rather than Supabase -- see the PENDING profile table note above.
+- Backend: Express now talks to Supabase with the service-role key, not the anon
+  key -- Phase 1 of the roadmap below, done 2026-08-23.
+- Habit + task completion history / analytics (Phase 2 of the roadmap) -- code is
+  live and already firing on every habit toggle / task archive, but the
+  `habit_completions` table + `tasks.completed_at` column are still PENDING (see
+  above), so there's no real history to analyze yet. `GET /api/analytics/habits`
+  and `GET /api/analytics/correlation` exist and 404 gracefully until then. No
+  frontend UI for this yet, by design -- see the roadmap note on why.
 
 **Still fake, not wired to anything real:**
 - AI entity briefings (BRAIN) and journal summaries (JOURNAL) — both `setTimeout`
@@ -320,22 +335,24 @@ from.
 
 1. ~~Supabase persistence~~ — done (tasks/entities/habits/goals/nutrition/journal all
    real; habit_streak real; profile table still pending, see above)
-2. **Security foundation** — swap `supabaseClient.js` from the Supabase anon key to the
-   service-role key (server-side only, added to `.env`, never reaches the browser). No
-   RLS changes needed or planned — service-role bypasses RLS by design, and real RLS
+2. ~~**Security foundation**~~ — done 2026-08-23. `supabaseClient.js` uses the
+   service-role key (server-side only, in `.env`, never reaches the browser), confirmed
+   working end-to-end (every route re-tested, a full CRUD round-trip re-verified). No
+   RLS changes made or planned — service-role bypasses RLS by design, and real RLS
    would need Supabase Auth + a user identity column, which isn't part of this
-   single-user architecture. Done first because it's a one-line change today and gets
-   expensive to retrofit once Calendar/Telegram/Finance secrets are sitting in the same
-   tables.
-3. **Habit + task completion history, and analytics on top** — new `habit_completions`
-   table (`habit_id`, `completed_at` timestamp; one row per completed day, inserted on
-   check, deleted on uncheck) so "what time of day do I skip habits" is finally
-   answerable — the current `completed_date` column only knows whether, never when.
-   `tasks` gets a `completed_at` timestamp set on archive / cleared on restore (a single
-   column is enough here — unlike habits, a task is a one-shot thing, not recurring, so
-   it doesn't need a full log). Backend analytics endpoints on top: hardest-to-keep
-   habits, time-of-day patterns, day-by-day habit-vs-task completion correlation. This
-   is explicitly meant as data infrastructure for AI insights later, not a display
+   single-user architecture.
+3. **Habit + task completion history, and analytics on top** — code done 2026-08-23,
+   migration still PENDING (see the `habits` table section above for the exact SQL).
+   New `habit_completions` table (`habit_id`, `completed_at` timestamp; one row per
+   completed day, inserted on check, deleted on uncheck) so "what time of day do I
+   skip habits" is finally answerable — the `completed_date` column only ever knew
+   whether, never when. `tasks` gets a `completed_at` timestamp set on archive /
+   cleared on restore (a single column is enough here — unlike habits, a task is a
+   one-shot thing, not recurring, so it doesn't need a full log). Backend analytics
+   endpoints on top (`GET /api/analytics/habits`, `GET /api/analytics/correlation`):
+   hardest-to-keep habits, time-of-day-completed patterns, day-by-day habit-vs-task
+   completion correlation. This is explicitly meant as data infrastructure for AI
+   insights later, not a display
    feature — self-contained, no external APIs.
 4. **Claude API bridge, in two steps:**
    - **4a.** BRAIN entity briefings + JOURNAL AI summaries made real — both are already
