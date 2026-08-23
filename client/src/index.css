@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+body {
+  margin: 0;
+  background: oklch(0.12 0.06 240);
+}
+
+* {
+  box-sizing: border-box;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+::selection { background: oklch(0.55 0.15 250 / 0.3); }
+
+a { color: oklch(0.75 0.13 240); text-decoration: none; }
+a:hover { color: oklch(0.82 0.13 240); }
+
+input::placeholder, textarea::placeholder { color: oklch(0.5 0.025 228); }
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  box-shadow: 0 0 24px oklch(0.8 0.19 200 / 0.19), 0 0 48px oklch(0.62 0.2 235 / 0.11),
+              inset 1px 1px 0 oklch(0.95 0.02 200 / 0.07), inset -1px -1px 0 oklch(0.05 0 0 / 0.3);
+}
+
+@keyframes eloParticle {
+  0%   { transform: translate(-50%,-50%) rotate(var(--ang)) translateY(0) scale(1); opacity: 1; }
+  100% { transform: translate(-50%,-50%) rotate(var(--ang)) translateY(-30px) scale(0.2); opacity: 0; }
+}
+
+@keyframes eloFirePulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.15); }
+}
+
+.elo-scroll::-webkit-scrollbar { width: 6px; }
+.elo-scroll::-webkit-scrollbar-track { background: transparent; }
+.elo-scroll::-webkit-scrollbar-thumb {
+  background: oklch(0.6 0.18 202);
+  border-radius: 3px;
+  box-shadow: 0 0 6px oklch(0.8 0.19 200 / 0.6);
+}
+
+.elo-hover-pop:hover {
+  transform: scale(1.12);
+  box-shadow: 0 0 19px oklch(0.8 0.19 200 / 0.09), 0 0 38px oklch(0.62 0.2 235 / 0.06);
+}
+
+.elo-row-hover:hover { background: oklch(0.24 0.08 232) !important; }
+
+.elo-entity-card:hover {
+  border-color: oklch(0.8 0.19 200) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 0 24px oklch(0.8 0.19 200 / 0.19), 0 0 48px oklch(0.62 0.2 235 / 0.11),
+              inset 1px 1px 0 oklch(0.95 0.02 200 / 0.07), inset -1px -1px 0 oklch(0.05 0 0 / 0.3) !important;
+}

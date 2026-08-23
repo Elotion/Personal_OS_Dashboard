@@ -1,0 +1,13 @@
+# Environment / credentials
+.env
+client/.env
+
+# Dependencies
+node_modules/
+client/node_modules/
+
+# Production build
+client/build/
+
+# macOS
+.DS_Store
