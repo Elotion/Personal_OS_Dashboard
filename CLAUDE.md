@@ -86,14 +86,19 @@ personal-os-dashboard/
 ```
 
 ## Credentials
-Real values live in `.env` — **not yet gitignored**, do that before this is ever pushed
-anywhere (add a `.gitignore` file with a single line: `.env`). Expected variables:
+Real values live in `.env`, which is gitignored (confirmed — see `.gitignore`, and this
+is now a real git repo, so that actually matters). Expected variables:
 ```
 PORT=5050
 SUPABASE_URL=https://znblctbounitxetfcgns.supabase.co
 SUPABASE_ANON_KEY=<get from Supabase dashboard -> Project Settings -> API Keys>
+SUPABASE_SERVICE_ROLE_KEY=<same page, "service_role" key -- server-side only, never sent to the browser>
 ```
-(Deliberately not repeating the actual key value here — CLAUDE.md is the kind of file
+`SUPABASE_SERVICE_ROLE_KEY` is the roadmap's security-foundation step (see "Longer-term
+roadmap" below) — `supabaseClient.js` prefers it automatically the moment it's present
+and falls back to the anon key until then, so adding it is the entire fix, no other code
+change needed.
+(Deliberately not repeating actual key values here — CLAUDE.md is the kind of file
 that ends up committed to git without anyone thinking twice about it.)
 
 ## Database schema
