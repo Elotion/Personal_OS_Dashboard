@@ -11,3 +11,6 @@ client/build/
 
 # macOS
 .DS_Store
+
+# Personal Claude Code permission overrides (not shared/team config)
+.claude/settings.local.json
