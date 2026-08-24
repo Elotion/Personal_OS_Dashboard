@@ -539,18 +539,16 @@ export default function App() {
   const generateBriefing = () => {
     const eid = selectedEntityId;
     setBriefingGenerating(true);
-    setTimeout(() => {
-      setBriefingGenerating(false);
-      setEntityBriefing((b) => ({
-        ...b,
-        [eid]: 'AI briefing generation will connect to Claude once wired up — this is a placeholder for that summary.',
-      }));
-    }, 900);
+    apiSend('/api/entities/' + eid + '/briefing', 'POST', {})
+      .then((result) => setEntityBriefing((b) => ({ ...b, [eid]: result.briefing })))
+      .catch((e) => {
+        console.error(e);
+        setEntityBriefing((b) => ({ ...b, [eid]: 'Briefing generation failed — try again in a moment.' }));
+      })
+      .finally(() => setBriefingGenerating(false));
   };
 
   // ---- JOURNAL handlers ----
-  // entries themselves are backed by the real API; recap generation is still a
-  // local placeholder (no Claude API wiring yet), so it's not persisted
   const toggleJournalRaw = (id) =>
     setJournalEntries((js) => js.map((j) => (j.id === id ? { ...j, expanded: !j.expanded } : j)));
   const changeJournalViewMode = (mode) => {
@@ -559,15 +557,14 @@ export default function App() {
   };
   const generateJournalSummary = (id) => {
     setJournalEntries((js) => js.map((j) => (j.id === id ? { ...j, generating: true } : j)));
-    setTimeout(() => {
-      setJournalEntries((js) =>
-        js.map((j) =>
-          j.id === id
-            ? { ...j, generating: false, recap: j.recap.replace(' (regenerated)', '') + ' (regenerated)' }
-            : j
-        )
-      );
-    }, 900);
+    apiSend('/api/journal/' + id + '/summary', 'POST', {})
+      .then((result) =>
+        setJournalEntries((js) => js.map((j) => (j.id === id ? { ...j, generating: false, recap: result.recap } : j)))
+      )
+      .catch((e) => {
+        console.error(e);
+        setJournalEntries((js) => js.map((j) => (j.id === id ? { ...j, generating: false } : j)));
+      });
   };
   const toggleJournalAdd = () => setJournalAddOpen((v) => !v);
   const submitJournalAdd = () => {

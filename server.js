@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const supabase = require('./supabaseClient');
+const { askClaude } = require('./lib/anthropic');
+const { getEntityContext, getJournalContext } = require('./lib/context');
 
 const app = express();
 app.use(cors());
@@ -57,6 +59,25 @@ function handle(res, promise) {
 // ---------------- ENTITIES ----------------
 app.get('/api/entities', (req, res) => {
   handle(res, supabase.from('entities').select('*').order('id'));
+});
+
+// Generated on demand (BRAIN's GENERATE button), not persisted -- entities has
+// no briefing column, so this is a live snapshot each time, not saved history.
+app.post('/api/entities/:id/briefing', async (req, res) => {
+  try {
+    const context = await getEntityContext(req.params.id);
+    if (!context) return res.status(404).json({ error: 'Entity not found' });
+    const prompt =
+      'You are writing a short status briefing for one life area inside a personal ' +
+      "dashboard. Based on the data below, write a 2-3 sentence plain-language " +
+      'summary of where things stand -- call out anything overdue or piling up. ' +
+      'No headers, no bullet points, just prose.\n\n' + context.text;
+    const briefing = await askClaude(prompt, { maxTokens: 1024 });
+    res.json({ briefing });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---------------- TASKS ----------------
@@ -315,6 +336,30 @@ app.put('/api/journal/:id', (req, res) => {
 
 app.delete('/api/journal/:id', (req, res) => {
   handle(res, supabase.from('journal_entries').delete().eq('id', req.params.id));
+});
+
+// Unlike the entity briefing above, journal_entries.recap is a real column
+// that already existed -- so a generated recap is persisted here, not just
+// returned. (Previously the fake placeholder deliberately wasn't saved, since
+// it would've just written filler text into the database -- now that it's a
+// real summary, saving it is the right call.)
+app.post('/api/journal/:id/summary', async (req, res) => {
+  try {
+    const entry = await getJournalContext(req.params.id);
+    if (!entry) return res.status(404).json({ error: 'Journal entry not found' });
+    const prompt =
+      'You are writing a short recap of one journal entry inside a personal ' +
+      'dashboard. Based on the raw text below, write a 2-3 sentence plain-' +
+      'language summary of what happened and how the day went. No headers, ' +
+      'no bullet points, just prose.\n\n' + (entry.raw_text || '(empty entry)');
+    const recap = await askClaude(prompt, { maxTokens: 1024 });
+    const { error } = await supabase.from('journal_entries').update({ recap }).eq('id', req.params.id);
+    if (error) { console.error(error); return res.status(400).json({ error: error.message }); }
+    res.json({ recap });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ---------------- ANALYTICS ----------------

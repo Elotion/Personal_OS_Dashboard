@@ -70,6 +70,22 @@ running; closing a browser tab does not affect the server at all.
   hour 23. Fixed with a new `localTimestampStr()` helper in `server.js`, applied
   everywhere those columns are written or filtered. Full detail in the RESOLVED note
   under `habit_completions` in the schema section above.
+- **Phase 3a — Claude API bridge (BRAIN briefings + JOURNAL summaries).** New
+  `lib/anthropic.js` (shared `askClaude()` client) and `lib/context.js`
+  (fetch-and-format Supabase data into a prompt) — deliberately two shared modules,
+  not per-feature one-offs, so 4b/5 extend `context.js` rather than duplicate fetch
+  logic. Two new routes: `POST /api/entities/:id/briefing` (live snapshot, not
+  persisted — no briefing column on `entities`) and `POST /api/journal/:id/summary`
+  (persisted to `journal_entries.recap`, which already existed as a column). Both
+  wired into the existing GENERATE buttons in place of the old `setTimeout` fakes.
+  **Found and fixed a real bug during testing**: Claude Opus 5's adaptive thinking is
+  on by default, and the first version capped `max_tokens` at 300-400 — thinking
+  alone occasionally ate the whole budget, truncating or emptying the visible reply
+  (`stop_reason: "max_tokens"`). Reproduced by re-running the same prompt 3x and
+  catching it fail intermittently, not assumed from one run. Fixed by adding
+  `output_config: { effort: 'low' }` (these are simple summarization prompts, not
+  reasoning-heavy) and raising `max_tokens` to 1024 — re-tested several times after
+  with no repeat.
 
 **Verified working, not just assumed:**
 - Full end-to-end CRUD re-test after the service-role key swap (every route).
@@ -79,16 +95,19 @@ running; closing a browser tab does not affect the server at all.
   browser reload that real data (6 habits, 2 tasks, 1-day streak) was untouched.
 - Timezone fix re-verified live (re-toggled a habit, `avg_completion_hour` came back
   correct) before being called done.
+- BRAIN briefing and JOURNAL summary both exercised live in the actual browser UI
+  (not just curl) — clicked the real GENERATE buttons, watched real Claude output
+  render. Journal recap persistence confirmed via reload; the test journal entry
+  used for this was deleted afterward, confirmed empty via a fresh fetch.
 
-**Git:** HEAD is `7b39e92` ("Phase 2 tested + a real timezone bug found and fixed").
-Working tree clean, no uncommitted changes.
+**Git:** Phase 3a (lib/anthropic.js, lib/context.js, server.js routes, App.js
+GENERATE handlers, CLAUDE.md, package.json/package-lock.json for the new
+`@anthropic-ai/sdk` dependency) is committed on top of `7b39e92` — check
+`git log -1` for the current HEAD. Working tree clean.
 
-**Not started:** Phase 3 (Claude API bridge) — see roadmap step 4 below. Start with 4a
-(BRAIN entity briefings + JOURNAL AI summaries — both already-built UI wired to fake
-`setTimeout` placeholders, structurally the same problem: read existing data → one
-summarization prompt via a new Express→Anthropic helper → display text). 4b (AI task
-capture in CRM, with a review-step-before-create) is a harder follow-on, not to be
-started until 4a is built and tested. Needs an Anthropic API key added to `.env` first.
+**Not started:** Phase 3b (AI task capture in CRM, with a review-step-before-create)
+— the harder follow-on to 3a, using the same `lib/anthropic.js` + `lib/context.js`
+pair. Not started this session.
 
 ## Working process (standing process, started 2026-08-23)
 Elo doesn't carry memory between sessions — this file and the git history are how any
@@ -108,6 +127,9 @@ personal-os-dashboard/
 ├── .env                     # PORT, SUPABASE_URL, SUPABASE_ANON_KEY — see Credentials below
 ├── server.js                # Express API, all routes, talks to Supabase
 ├── supabaseClient.js        # Supabase client init, reads .env
+├── lib/
+│   ├── anthropic.js          # Shared Claude API client + askClaude() helper
+│   └── context.js            # Fetches + formats Supabase data into Claude-ready text
 ├── package.json
 └── client/src/
     ├── App.js                # ALL app state lives here, passed down as props to tabs
@@ -131,7 +153,9 @@ PORT=5050
 SUPABASE_URL=https://znblctbounitxetfcgns.supabase.co
 SUPABASE_ANON_KEY=<get from Supabase dashboard -> Project Settings -> API Keys>
 SUPABASE_SERVICE_ROLE_KEY=<same page, "service_role" key -- server-side only, never sent to the browser>
+ANTHROPIC_API_KEY=<from console.anthropic.com -> Settings -> API Keys -- server-side only>
 ```
+`ANTHROPIC_API_KEY` powers Phase 3a's Claude bridge (`lib/anthropic.js`) -- added and confirmed live 2026-08-23.
 `SUPABASE_SERVICE_ROLE_KEY` is the roadmap's security-foundation step (see "Longer-term
 roadmap" below) — `supabaseClient.js` prefers it automatically the moment it's present
 and falls back to the anon key until then, so adding it is the entire fix, no other code
@@ -330,10 +354,28 @@ exactly this reason).
   in the process (see the RESOLVED note above). `GET /api/analytics/habits` and
   `GET /api/analytics/correlation` both return real, verified-correct numbers. No
   frontend UI for this yet, by design -- see the roadmap note on why.
+- AI entity briefings (BRAIN) and journal summaries (JOURNAL) -- Phase 3a, done and
+  tested 2026-08-23. Both GENERATE buttons now call real Claude Opus 5 through a
+  shared `lib/anthropic.js` (`askClaude()`) + `lib/context.js` (fetches/formats
+  Supabase data into a prompt) pair, instead of the old `setTimeout` placeholders.
+  Verified live in the browser, not just via curl. Journal recaps are persisted to
+  `journal_entries.recap` (that column already existed, so once the summary was
+  real there was no reason not to save it -- unlike the old fake version, which
+  was deliberately never saved). Entity briefings are NOT persisted -- `entities`
+  has no briefing column, so BRAIN's briefing is a fresh live snapshot every time
+  GENERATE is hit, not saved history.
+  **Real bug found and fixed during testing:** Claude Opus 5 has adaptive thinking
+  on by default, and the first version of these routes capped `max_tokens` at
+  300-400 -- occasionally the model's thinking alone consumed the entire budget,
+  cutting the visible text off mid-sentence or leaving it empty entirely
+  (`stop_reason: "max_tokens"` with a near-empty text block). Reproduced directly
+  (ran the same prompt 3x, saw it fail intermittently), not assumed from a single
+  test. Fixed by setting `output_config: { effort: 'low' }` (these are short,
+  simple summarization prompts, not reasoning-heavy ones) and raising `max_tokens`
+  to 1024 in both routes -- re-ran the same prompts several times afterward with
+  no repeat.
 
 **Still fake, not wired to anything real:**
-- AI entity briefings (BRAIN) and journal summaries (JOURNAL) — both `setTimeout`
-  placeholders standing in for real Claude API calls (see roadmap below).
 - Calendar events on HOME — the day cells and week navigation are real, but the events
   list itself is still the hardcoded `EVENTS_TODAY` demo data, only ever shown for the
   actual current day.
@@ -395,10 +437,15 @@ from.
    for AI insights later, not a display feature — self-contained, no external APIs,
    no frontend UI yet by design.
 4. **Claude API bridge, in two steps:**
-   - **4a.** BRAIN entity briefings + JOURNAL AI summaries made real — both are already
-     built UI wired to fake `setTimeout` placeholders, and structurally the same problem
-     (read data → one summarization prompt → display text). One small Express→Anthropic
-     helper ships both.
+   - ~~**4a.**~~ BRAIN entity briefings + JOURNAL AI summaries made real — done and
+     tested 2026-08-23 (see "What's real vs. still mock" above for the full writeup,
+     including a real bug found and fixed during testing: adaptive thinking on Claude
+     Opus 5 occasionally consumed the whole token budget on a too-small `max_tokens`,
+     truncating or emptying the visible response). Shipped as two shared modules,
+     not per-feature one-offs: `lib/anthropic.js` (the API client + `askClaude()`) and
+     `lib/context.js` (fetch-and-format Supabase data into a prompt) — later phases
+     that need Claude (4b, 5) extend `context.js` with new context-builder functions
+     rather than duplicating fetch logic per feature.
    - **4b.** AI-driven task capture in CRM, as its own follow-on using the same helper —
      a harder problem than 4a (freeform text → structured extraction of title / entity /
      timeframe → a *write* into `tasks`, with real failure modes). Decided: parsed tasks
