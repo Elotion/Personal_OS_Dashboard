@@ -21,6 +21,28 @@ function localDateStr(d) {
   return `${y}-${m}-${day}`;
 }
 
+// local wall-clock timestamp, deliberately WITHOUT a 'Z'/offset suffix.
+// habit_completions.completed_at and tasks.completed_at are both plain
+// TIMESTAMP columns (no timezone) -- Postgres stores exactly the string it's
+// given, with no conversion. Writing new Date().toISOString() there (as this
+// code originally did) stores the UTC clock reading verbatim, e.g. writes
+// "23:52" into a column meant to answer "what hour did this happen" for a
+// user whose actual local time was 16:52 -- confirmed wrong via direct testing
+// (avg_completion_hour came back as 23 for a toggle done at 4:52pm PDT).
+// Writing local wall-clock time instead makes the stored value ALREADY correct
+// for "what hour, locally" without needing a timezone-aware column type (which
+// would need yet another migration) -- deliberate for a single-user,
+// single-timezone app. Every read of these columns elsewhere in this file
+// parses the result via `new Date(str)`, which JS interprets as local time for
+// an offset-less string, so this stays self-consistent end to end. If this
+// data is ever consumed by something running in a different timezone (e.g. a
+// server deployed elsewhere), this convention needs revisiting.
+function localTimestampStr(d = new Date()) {
+  const pad = (n, len = 2) => String(n).padStart(len, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
 // small helper so every route doesn't repeat the same error handling
 function handle(res, promise) {
   return promise.then(({ data, error }) => {
@@ -60,7 +82,7 @@ app.put('/api/tasks/:id', async (req, res) => {
   // archiving = completed, restoring = not -- set/clear completed_at in step,
   // so task completion history needs zero frontend changes to start working
   if (Object.prototype.hasOwnProperty.call(req.body, 'is_archived')) {
-    body.completed_at = req.body.is_archived ? new Date() : null;
+    body.completed_at = req.body.is_archived ? localTimestampStr() : null;
   }
 
   let result = await supabase.from('tasks').update(body).eq('id', req.params.id).select();
@@ -140,14 +162,14 @@ app.put('/api/habits/:id', async (req, res) => {
       const existing = await supabase.from('habit_completions')
         .select('id').eq('habit_id', id).gte('completed_at', dayStart).lte('completed_at', dayEnd).limit(1);
       if (!existing.error && (!existing.data || existing.data.length === 0)) {
-        const ins = await supabase.from('habit_completions').insert([{ habit_id: id, completed_at: new Date().toISOString() }]);
+        const ins = await supabase.from('habit_completions').insert([{ habit_id: id, completed_at: localTimestampStr() }]);
         if (ins.error && !missingHabitCompletionsTable(ins.error)) console.error('habit_completions insert failed:', ins.error);
       } else if (existing.error && !missingHabitCompletionsTable(existing.error)) {
         console.error('habit_completions lookup failed:', existing.error);
       }
     } else {
       // unchecked -- remove today's logged completion, if any
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDateStr(new Date());
       const dayStart = today + 'T00:00:00';
       const dayEnd = today + 'T23:59:59.999';
       const del = await supabase.from('habit_completions').delete().eq('habit_id', id).gte('completed_at', dayStart).lte('completed_at', dayEnd);
@@ -353,7 +375,7 @@ app.get('/api/analytics/correlation', async (req, res) => {
   const totalHabits = habitsResult.data.length;
 
   const completionsResult = await supabase.from('habit_completions')
-    .select('habit_id, completed_at').gte('completed_at', windowStart.toISOString());
+    .select('habit_id, completed_at').gte('completed_at', localTimestampStr(windowStart));
   if (completionsResult.error) {
     if (missingHabitCompletionsTable(completionsResult.error)) {
       return res.status(404).json({ error: 'habit_completions table does not exist yet' });
@@ -363,7 +385,7 @@ app.get('/api/analytics/correlation', async (req, res) => {
   }
 
   const tasksResult = await supabase.from('tasks')
-    .select('id, completed_at').eq('is_archived', true).gte('completed_at', windowStart.toISOString());
+    .select('id, completed_at').eq('is_archived', true).gte('completed_at', localTimestampStr(windowStart));
   if (tasksResult.error) {
     if (missingTaskCompletedAtColumn(tasksResult.error)) {
       return res.status(404).json({ error: 'tasks.completed_at column does not exist yet' });

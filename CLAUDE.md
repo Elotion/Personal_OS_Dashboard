@@ -159,11 +159,8 @@ CREATE TABLE habit_streak (
 -- streak count, synced cross-device. See "Decisions" below for why it's a
 -- separate table rather than a habits column.
 
--- ============================================================
--- PENDING MIGRATION (Phase 2 of the roadmap below) -- run once in the
--- Supabase dashboard -> SQL Editor (Claude cannot run DDL with the anon *or*
--- service-role key -- both are data clients, not schema tools):
---
+-- RESOLVED 2026-08-23: habit_completions table + tasks.completed_at column
+-- both confirmed live and tested with real math, not just "it responds":
 --   CREATE TABLE habit_completions (
 --     id SERIAL PRIMARY KEY,
 --     habit_id INTEGER REFERENCES habits(id) ON DELETE CASCADE,
@@ -171,27 +168,33 @@ CREATE TABLE habit_streak (
 --   );
 --   ALTER TABLE habit_completions ENABLE ROW LEVEL SECURITY;
 --   CREATE POLICY "Enable all for public" ON habit_completions FOR ALL USING (true) WITH CHECK (true);
---
 --   ALTER TABLE tasks ADD COLUMN completed_at TIMESTAMP;
 --
--- Once run, no further code changes needed -- server.js already writes to both
--- the moment they exist (PUT /api/habits/:id logs a habit_completions row on
--- check / deletes it on uncheck; PUT /api/tasks/:id sets completed_at on
--- archive / clears it on restore), and GET /api/analytics/habits +
--- GET /api/analytics/correlation start returning real data instead of 404.
--- ============================================================
+-- habit_completions is a one-row-per-habit-per-day log (grain decided
+-- deliberately -- matches the existing single daily on/off toggle, not
+-- unlimited events), written by PUT /api/habits/:id on check/uncheck.
+-- tasks.completed_at is a single column (not a log like habits get -- a task
+-- is one-shot, not recurring), written by PUT /api/tasks/:id on
+-- archive/restore. GET /api/analytics/habits and GET /api/analytics/correlation
+-- both verified against seeded, hand-checked historical data (6 days across 3
+-- habits + 2 tasks) -- every completion rate, hardest-habit ranking, and
+-- day-by-day correlation bucket matched hand calculation exactly. ON DELETE
+-- CASCADE means deleting a habit also deletes its history -- accepted for now
+-- (single-user, v1), revisit if that turns out to matter. This is data
+-- infrastructure for AI insights later, not a display feature, so there's
+-- intentionally no frontend UI for it yet -- it's verified directly against
+-- the API, same as this testing pass did.
 --
--- Until that migration runs: habit_completions is a one-row-per-habit-per-day
--- log (grain decided deliberately -- matches the existing single daily on/off
--- toggle, not unlimited events) used for pattern analysis (hardest-to-keep
--- habits, time-of-day-completed distribution, day-by-day habit-vs-task
--- correlation) -- this is data infrastructure for AI insights later, not a
--- display feature, so there's intentionally no frontend UI for it yet; it's
--- verified directly against the API. ON DELETE CASCADE means deleting a habit
--- also deletes its history -- accepted for now (single-user, v1), revisit if
--- that turns out to matter. tasks.completed_at is a single column, not a log
--- table like habits get -- a task is a one-shot thing, not recurring, so
--- "was it done, and when" doesn't need history the way a repeating habit does.
+-- BUG FOUND AND FIXED during that testing: both completed_at columns are plain
+-- TIMESTAMP (no timezone) -- the first version of this code wrote
+-- new Date().toISOString() into them, which stores the UTC clock reading
+-- verbatim (e.g. wrote "23:52" for a toggle done at 4:52pm PDT). Caught via
+-- direct testing (avg_completion_hour came back as 23, not 16) before it was
+-- ever called done. Fixed by writing local wall-clock time instead
+-- (localTimestampStr() in server.js) -- correct for a single-user,
+-- single-timezone app without needing a TIMESTAMPTZ column (which would've
+-- meant yet another migration). If this data is ever read by something running
+-- in a different timezone, this convention needs revisiting.
 
 -- PENDING: profile table (Operator card's name/tagline/focus/photo) does not
 -- exist yet either. Same singleton-row pattern as habit_streak above, same
@@ -284,11 +287,10 @@ exactly this reason).
   localStorage rather than Supabase -- see the PENDING profile table note above.
 - Backend: Express now talks to Supabase with the service-role key, not the anon
   key -- Phase 1 of the roadmap below, done 2026-08-23.
-- Habit + task completion history / analytics (Phase 2 of the roadmap) -- code is
-  live and already firing on every habit toggle / task archive, but the
-  `habit_completions` table + `tasks.completed_at` column are still PENDING (see
-  above), so there's no real history to analyze yet. `GET /api/analytics/habits`
-  and `GET /api/analytics/correlation` exist and 404 gracefully until then. No
+- Habit + task completion history / analytics (Phase 2 of the roadmap) -- done and
+  tested 2026-08-23, including catching and fixing a real UTC/local timezone bug
+  in the process (see the RESOLVED note above). `GET /api/analytics/habits` and
+  `GET /api/analytics/correlation` both return real, verified-correct numbers. No
   frontend UI for this yet, by design -- see the roadmap note on why.
 
 **Still fake, not wired to anything real:**
@@ -341,19 +343,19 @@ from.
    RLS changes made or planned — service-role bypasses RLS by design, and real RLS
    would need Supabase Auth + a user identity column, which isn't part of this
    single-user architecture.
-3. **Habit + task completion history, and analytics on top** — code done 2026-08-23,
-   migration still PENDING (see the `habits` table section above for the exact SQL).
-   New `habit_completions` table (`habit_id`, `completed_at` timestamp; one row per
-   completed day, inserted on check, deleted on uncheck) so "what time of day do I
-   skip habits" is finally answerable — the `completed_date` column only ever knew
-   whether, never when. `tasks` gets a `completed_at` timestamp set on archive /
-   cleared on restore (a single column is enough here — unlike habits, a task is a
-   one-shot thing, not recurring, so it doesn't need a full log). Backend analytics
-   endpoints on top (`GET /api/analytics/habits`, `GET /api/analytics/correlation`):
-   hardest-to-keep habits, time-of-day-completed patterns, day-by-day habit-vs-task
-   completion correlation. This is explicitly meant as data infrastructure for AI
-   insights later, not a display
-   feature — self-contained, no external APIs.
+3. ~~**Habit + task completion history, and analytics on top**~~ — done and tested
+   2026-08-23 (see the RESOLVED note in the `habits` table section above, including
+   a UTC/local timezone bug that was caught and fixed during testing, not after).
+   `habit_completions` table (`habit_id`, `completed_at` timestamp; one row per
+   completed day, inserted on check, deleted on uncheck) answers "what time of day
+   do I tend to complete habits" — the `completed_date` column only ever knew
+   whether, never when. `tasks.completed_at` set on archive / cleared on restore.
+   Backend analytics endpoints (`GET /api/analytics/habits`,
+   `GET /api/analytics/correlation`): hardest-to-keep habits, time-of-day-completed
+   patterns, day-by-day habit-vs-task completion correlation — verified against
+   hand-checked seeded data, not just "the request succeeds." Data infrastructure
+   for AI insights later, not a display feature — self-contained, no external APIs,
+   no frontend UI yet by design.
 4. **Claude API bridge, in two steps:**
    - **4a.** BRAIN entity briefings + JOURNAL AI summaries made real — both are already
      built UI wired to fake `setTimeout` placeholders, and structurally the same problem
