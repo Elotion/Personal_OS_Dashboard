@@ -52,6 +52,44 @@ manual restart (Ctrl+C, then `npm start` again). Frontend **does** hot-reload �
 file is enough, no restart needed. Closing a Terminal window kills whatever process it was
 running; closing a browser tab does not affect the server at all.
 
+## Latest Session Summary (2026-08-23)
+**Completed this session:**
+- **Phase 1 — Security foundation.** `supabaseClient.js` now prefers
+  `SUPABASE_SERVICE_ROLE_KEY` (falls back to anon key if absent). Along the way, fixed a
+  credential-formatting bug (`<`/`=>` copy-paste artifacts wrapped around the pasted key
+  in `.env`, causing "Invalid API key") — diagnosed via `od -c` without ever printing the
+  actual secret.
+- **Phase 2 — Habit + task completion history and analytics.** New `habit_completions`
+  log table (one row per habit per completed day) and `tasks.completed_at`, both wired
+  into `PUT /api/habits/:id` and `PUT /api/tasks/:id`. Two new endpoints:
+  `GET /api/analytics/habits` (per-habit completion rate, avg completion hour, ranked
+  hardest-first) and `GET /api/analytics/correlation?days=N` (day-by-day habit-vs-task
+  completion buckets). **Found and fixed a real bug during testing**: both
+  `completed_at` columns are timezone-naive `TIMESTAMP`, but the code was writing
+  `.toISOString()` (UTC) into them, so a 4:52pm local toggle was stored and read back as
+  hour 23. Fixed with a new `localTimestampStr()` helper in `server.js`, applied
+  everywhere those columns are written or filtered. Full detail in the RESOLVED note
+  under `habit_completions` in the schema section above.
+
+**Verified working, not just assumed:**
+- Full end-to-end CRUD re-test after the service-role key swap (every route).
+- Analytics endpoints checked against 6 days of seeded, hand-calculated data across 3
+  habits + 2 tasks — every completion rate, ranking, and correlation bucket matched by
+  hand. All seeded test data was deleted/restored afterward; confirmed via a fresh
+  browser reload that real data (6 habits, 2 tasks, 1-day streak) was untouched.
+- Timezone fix re-verified live (re-toggled a habit, `avg_completion_hour` came back
+  correct) before being called done.
+
+**Git:** HEAD is `7b39e92` ("Phase 2 tested + a real timezone bug found and fixed").
+Working tree clean, no uncommitted changes.
+
+**Not started:** Phase 3 (Claude API bridge) — see roadmap step 4 below. Start with 4a
+(BRAIN entity briefings + JOURNAL AI summaries — both already-built UI wired to fake
+`setTimeout` placeholders, structurally the same problem: read existing data → one
+summarization prompt via a new Express→Anthropic helper → display text). 4b (AI task
+capture in CRM, with a review-step-before-create) is a harder follow-on, not to be
+started until 4a is built and tested. Needs an Anthropic API key added to `.env` first.
+
 ## Working process (standing process, started 2026-08-23)
 Elo doesn't carry memory between sessions — this file and the git history are how any
 future session (Claude or human) gets back on the same page about exactly where things
