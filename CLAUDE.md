@@ -374,6 +374,24 @@ exactly this reason).
   simple summarization prompts, not reasoning-heavy ones) and raising `max_tokens`
   to 1024 in both routes -- re-ran the same prompts several times afterward with
   no repeat.
+- AI-driven task capture in CRM (Phase 3b) -- done and tested 2026-08-23. New
+  "✨ AI ADD" input above CRM's manual add row: freeform text -> `POST
+  /api/tasks/parse` (title, entity, timeframe, is_key, via `askClaudeStructured()`
+  + a Zod schema, `lib/anthropic.js`) -> the SAME manual add row, pre-filled --
+  the review step is just "the normal add row, already filled in," not a
+  separate UI, so it's trivially removable later (swap the parse call for a
+  direct create, no second code path to rip out). Nothing is auto-created;
+  the user still hits the same ADD button. Added a small star toggle to that
+  row (previously the manual add flow had no way to set `is_key` at all) so
+  the AI's importance guess is visible and editable, not silently dropped.
+  **Real bug found and fixed during testing:** the first version only gave
+  Claude entity *names* (`UCLA, HEMS, WORK, ...`), no descriptions -- caught a
+  real misclassification this way ("follow up with mentor about fundraising
+  deck feedback" filed under generic `WORK` instead of `HEMS`, the actual
+  startup). Fixed by adding `getEntitiesWithDescriptions()` to
+  `lib/context.js` and passing `name: description` pairs in the prompt;
+  re-tested the same note afterward and it correctly picked `HEMS`.
+  Cross-checked a `WORK`-shaped note afterward to confirm no regression.
 
 **Still fake, not wired to anything real:**
 - Calendar events on HOME — the day cells and week navigation are real, but the events
@@ -402,6 +420,15 @@ exactly this reason).
   actually saving, adding up to ~520ms of pointless delay before anything persisted. Fixed
   by calling `archiveCrmTask` directly. Worth checking for this pattern (handlers wrapping
   other handlers' timeouts) if new features get layered on existing ones.
+- **KNOWN QUIRK, not yet root-caused:** a freshly-added row (a new journal entry via
+  `submitJournalAdd`, a new task via `submitCrmAdd`) sometimes doesn't render in its
+  list immediately after creation, even though the create genuinely succeeded (confirmed
+  both times via direct API check) — a page reload always shows it correctly. Observed
+  twice independently during Phase 3a/3b testing (once with journal, once with CRM add),
+  so it's a pre-existing pattern in how these lists filter/derive from state, not
+  specific to either feature or to the new AI-assisted flows. Didn't block either phase
+  since the underlying data was always correct — worth investigating on its own if it
+  keeps showing up, but out of scope for what was asked in either session.
 
 ## Longer-term roadmap (agreed 2026-08-23 — supersedes any earlier ordering in this file)
 The long-term goal: this becomes a personal data layer, not just a tracker — habits,
@@ -446,17 +473,20 @@ from.
      `lib/context.js` (fetch-and-format Supabase data into a prompt) — later phases
      that need Claude (4b, 5) extend `context.js` with new context-builder functions
      rather than duplicating fetch logic per feature.
-   - **4b.** AI-driven task capture in CRM, as its own follow-on using the same helper —
-     a harder problem than 4a (freeform text → structured extraction of title / entity /
-     timeframe → a *write* into `tasks`, with real failure modes). Decided: parsed tasks
-     go through a **review step before creation, not auto-created** — a mis-filed task
-     costs more to notice than a mediocre AI paragraph costs to reread. Build this so the
-     review step is easy to remove later once the parsing is trusted, rather than deeply
-     baked into the flow — revisit removing it once trust is established, but no setting
-     or toggle for this needed now. No dedicated voice/mic feature either — the capture
-     input just needs to be a normal, well-behaved text field; voice comes from OS-level
-     dictation (macOS built-in / Whisper Flow) typing into it, not something this app
-     needs to build.
+   - ~~**4b.**~~ AI-driven task capture in CRM — done and tested 2026-08-23 (see
+     "What's real vs. still mock" above, including a real misclassification bug
+     found and fixed during testing). `POST /api/tasks/parse` (freeform text →
+     structured title/entity/timeframe/is_key, via a Zod schema so the response
+     is validated, not hand-parsed) feeds the *existing* manual add row instead
+     of a separate review UI. This was the decision going in: parsed tasks go
+     through a **review step before creation, not auto-created** — a mis-filed
+     task costs more to notice than a mediocre AI paragraph costs to reread —
+     and reusing the manual add row satisfies that for free (the user sees
+     and can edit every field before hitting the same ADD button that was
+     already there) while staying trivially removable later, since there's no
+     separate review UI to strip out if the parsing is ever trusted enough to
+     auto-create. No dedicated voice/mic feature was needed — the capture
+     input is a normal text field, as decided going in.
 5. **Journal as a real insight source** — use the Claude bridge from step 4 to extract
    structured signal (mood, themes) from raw journal text at save time, then build the
    actual cross-domain correlation view using step 3's habit/task history + this new

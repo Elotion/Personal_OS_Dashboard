@@ -1,6 +1,6 @@
 import React from 'react';
 import { css } from '../css';
-import { ENTITY_META, ENTITY_OPTIONS, TF_COLOR, TF_ORDER, GLOW_STRONG } from '../theme';
+import { ENTITY_META, ENTITY_OPTIONS, TF_COLOR, TF_ORDER, GLOW_STRONG, GOLD } from '../theme';
 
 function CategoryPicker({ task, setTaskCategory }) {
   if (!task.pickerOpen) return null;
@@ -41,6 +41,8 @@ export default function CrmTab(props) {
     crmView, setCrmView, crmSearch, setCrmSearch,
     crmAddOpen, setCrmAddOpen, crmAddTitle, setCrmAddTitle,
     crmAddTimeframe, setCrmAddTimeframe, crmAddEntity, setCrmAddEntity,
+    crmAddIsKey, setCrmAddIsKey,
+    crmSmartText, setCrmSmartText, crmSmartParsing, submitCrmSmartAdd,
     crmDraggingId, setCrmDraggingId, crmDragOverCol, setCrmDragOverCol,
     submitCrmAdd, toggleCrmKey, archiveCrmTask, restoreCrmTask, deleteCrmTask,
     toggleCategoryPicker, setTaskCategory, dropOnCol,
@@ -122,6 +124,20 @@ export default function CrmTab(props) {
         >+ ADD</div>
       </div>
 
+      <div style={css('display:flex;gap:8px;align-items:center;')}>
+        <input
+          value={crmSmartText}
+          onChange={(e) => setCrmSmartText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !crmSmartParsing) submitCrmSmartAdd(); }}
+          placeholder="Describe a task in plain English — Claude fills in the details below to review…"
+          style={css('flex:1;min-width:0;background:oklch(0.16 0.075 238);border:1px solid ' + GOLD + ';border-radius:8px;padding:10px 14px;color:oklch(0.92 0.015 228);font-size:12.5px;')}
+        />
+        <div
+          onClick={() => { if (!crmSmartParsing) submitCrmSmartAdd(); }}
+          style={css('display:flex;align-items:center;gap:6px;background:' + GOLD + ';color:oklch(0.12 0.06 240);font-size:11.5px;font-weight:700;letter-spacing:0.03em;padding:10px 16px;border-radius:8px;cursor:pointer;white-space:nowrap;flex-shrink:0;')}
+        >{crmSmartParsing ? 'PARSING…' : '✨ AI ADD'}</div>
+      </div>
+
       {crmAddOpen && (
         <div style={css('display:flex;gap:8px;background:oklch(0.16 0.075 238);border:1px solid oklch(0.58 0.18 204);border-radius:8px;padding:10px;')}>
           <input
@@ -145,6 +161,11 @@ export default function CrmTab(props) {
           >
             {ENTITY_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
+          <div
+            onClick={() => setCrmAddIsKey(!crmAddIsKey)}
+            title="Mark as key task"
+            style={css('display:flex;align-items:center;justify-content:center;width:34px;flex-shrink:0;cursor:pointer;font-size:16px;color:' + (crmAddIsKey ? GOLD : 'oklch(0.4 0.025 228)') + ';')}
+          >★</div>
           <div
             onClick={submitCrmAdd}
             style={css('background:oklch(0.2 0.08 228);color:oklch(0.92 0.1 198);border:1px solid oklch(0.78 0.2 200);box-shadow:' + GLOW_STRONG + ';font-size:11.5px;font-weight:700;padding:8px 16px;border-radius:6px;cursor:pointer;white-space:nowrap;flex-shrink:0;')}

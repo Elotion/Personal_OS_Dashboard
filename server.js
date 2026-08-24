@@ -2,8 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const supabase = require('./supabaseClient');
-const { askClaude } = require('./lib/anthropic');
-const { getEntityContext, getJournalContext } = require('./lib/context');
+const { z } = require('zod');
+const { askClaude, askClaudeStructured } = require('./lib/anthropic');
+const { getEntityContext, getJournalContext, getEntitiesWithDescriptions } = require('./lib/context');
 
 const app = express();
 app.use(cors());
@@ -92,6 +93,42 @@ app.get('/api/tasks', (req, res) => {
 app.post('/api/tasks', (req, res) => {
   const { title, entity_id, timeframe, is_key } = req.body;
   handle(res, supabase.from('tasks').insert([{ title, entity_id, timeframe, is_key: !!is_key }]).select());
+});
+
+// Phase 3b: freeform text -> structured task fields, via Claude. Deliberately
+// does NOT create anything -- returns the parsed fields for the frontend to
+// show as a review step (pre-filling the existing manual add row) before the
+// normal POST /api/tasks above actually creates it. A mis-filed task costs
+// more to notice than a mediocre parse costs to re-edit, so nothing here is
+// auto-created.
+app.post('/api/tasks/parse', async (req, res) => {
+  try {
+    const text = (req.body.text || '').trim();
+    if (!text) return res.status(400).json({ error: 'text is required' });
+    const entities = await getEntitiesWithDescriptions();
+    const entityNames = entities.map((e) => e.name);
+    const TaskSchema = z.object({
+      title: z.string().describe('A short, clear task title, cleaned up from the raw text'),
+      entity: z.enum(entityNames).describe('Best-matching life area for this task'),
+      timeframe: z.enum(['TODAY', 'THIS WEEK', 'THIS MONTH', 'SOMEDAY'])
+        .describe('When this should happen, inferred from the text -- default to THIS WEEK if unclear'),
+      is_key: z.boolean().describe('True only if the text signals this is especially important or urgent'),
+    });
+    // names alone aren't enough signal (e.g. "HEMS" means nothing on its own) --
+    // pairing each with its description is what fixed a real misclassification
+    // seen during testing (a startup-fundraising note was filed under a
+    // generic "WORK" area instead of the startup's own entity)
+    const entityList = entities.map((e) => `${e.name}: ${e.description || '(no description)'}`).join('\n');
+    const prompt =
+      'Extract a structured task from this freeform note for a personal task tracker. ' +
+      'Available life areas (pick the single best match):\n' + entityList + '\n\nNote: ' + text;
+    const parsed = await askClaudeStructured(prompt, TaskSchema);
+    if (!parsed) return res.status(502).json({ error: 'Could not parse a task from that text' });
+    res.json(parsed);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // completed_at was added via the Phase 2 migration (see CLAUDE.md) and may not

@@ -252,6 +252,9 @@ export default function App() {
   const [crmAddTitle, setCrmAddTitle] = useState('');
   const [crmAddTimeframe, setCrmAddTimeframe] = useState('TODAY');
   const [crmAddEntity, setCrmAddEntity] = useState('PERSONAL');
+  const [crmAddIsKey, setCrmAddIsKey] = useState(false);
+  const [crmSmartText, setCrmSmartText] = useState('');
+  const [crmSmartParsing, setCrmSmartParsing] = useState(false);
   const [crmDraggingId, setCrmDraggingId] = useState(null);
   const [crmDragOverCol, setCrmDragOverCol] = useState(null);
   const [crmFadingIds, setCrmFadingIds] = useState([]);
@@ -335,11 +338,31 @@ export default function App() {
     const title = crmAddTitle.trim();
     if (!title) return;
     const entity_id = entityIdByName[crmAddEntity];
-    apiSend('/api/tasks', 'POST', { title, entity_id, timeframe: crmAddTimeframe, is_key: false })
+    apiSend('/api/tasks', 'POST', { title, entity_id, timeframe: crmAddTimeframe, is_key: crmAddIsKey })
       .then((rows) => setCrmTasks((ts) => [transformTask(rows[0], crmAddEntity), ...ts]))
       .catch((e) => console.error(e));
     setCrmAddTitle('');
+    setCrmAddIsKey(false);
     setCrmAddOpen(false);
+  };
+  // Phase 3b: parses freeform text into task fields via Claude, then pre-fills
+  // and opens the SAME manual add row above -- the review step is just "the
+  // normal add row, pre-filled," not a separate UI to build or later remove.
+  const submitCrmSmartAdd = () => {
+    const text = crmSmartText.trim();
+    if (!text) return;
+    setCrmSmartParsing(true);
+    apiSend('/api/tasks/parse', 'POST', { text })
+      .then((parsed) => {
+        setCrmAddTitle(parsed.title);
+        setCrmAddTimeframe(parsed.timeframe);
+        setCrmAddEntity(parsed.entity);
+        setCrmAddIsKey(!!parsed.is_key);
+        setCrmAddOpen(true);
+        setCrmSmartText('');
+      })
+      .catch((e) => console.error(e))
+      .finally(() => setCrmSmartParsing(false));
   };
   const dropOnCol = (id, timeframe) => {
     setCrmTasks((ts) => ts.map((t) => (t.id === id ? { ...t, timeframe } : t)));
@@ -739,6 +762,8 @@ export default function App() {
     crmView, setCrmView, crmSearch, setCrmSearch,
     crmAddOpen, setCrmAddOpen, crmAddTitle, setCrmAddTitle,
     crmAddTimeframe, setCrmAddTimeframe, crmAddEntity, setCrmAddEntity,
+    crmAddIsKey, setCrmAddIsKey,
+    crmSmartText, setCrmSmartText, crmSmartParsing, submitCrmSmartAdd,
     crmDraggingId, setCrmDraggingId, crmDragOverCol, setCrmDragOverCol,
     submitCrmAdd, toggleCrmKey, archiveCrmTask, restoreCrmTask, deleteCrmTask,
     toggleCategoryPicker, setTaskCategory, dropOnCol,
