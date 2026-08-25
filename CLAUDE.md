@@ -773,8 +773,35 @@ from.
    mumbled/mispronounced speech) discussed and deliberately deferred -- Elo
    asked to hold off on adding a new external API/credential for now; revisit
    whenever that's actually wanted.
-8. **Deploy publicly** (Vercel + Railway or similar) — the security foundation from step
-   2 is already in place by this point, which is exactly the right precondition.
+8. **Deploy publicly** — in progress, code-side prep done and tested 2026-08-25, actual
+   hosting not yet live. **Architecture decided: one deployment (Railway), not the
+   originally-sketched Vercel+Railway split.** Reason: the Telegram bot's long-polling
+   loop needs an always-on process, which serverless hosting (Vercel) fundamentally
+   can't run -- functions spin down between requests. Railway (or Render/Fly.io) runs a
+   persistent Node process, which the bot needs anyway, so one platform serves both the
+   API and the built React frontend from the same Express process. This also sidesteps
+   CORS entirely (same origin) and removes the need for a separate frontend API-base-URL
+   config.
+   Code changes: `server.js` now serves `client/build` as static files + an SPA
+   fallback when `NODE_ENV=production` (registered after every `/api/*` route so those
+   still win); root `package.json` gained a `build` script (`cd client && npm install
+   && npm run build`); `lib/google.js`'s OAuth redirect URI and the post-auth browser
+   redirect are now driven by `PUBLIC_URL`/`FRONTEND_URL` env vars instead of hardcoded
+   `localhost` (defaults preserve current local-dev behavior when those aren't set);
+   `client/src/App.js`'s `connectGoogleCalendar()` now branches on
+   `process.env.NODE_ENV` -- the dev-only proxy workaround only applies in dev, since
+   production has no separate dev server/port to route around.
+   **Verified locally before touching any real host:** `npm run build` compiles clean
+   (pre-existing lint warnings only, nothing introduced by this); ran the app with
+   `NODE_ENV=production` locally and confirmed one process serves both the real built
+   frontend (loaded correctly in-browser, real data rendering) and the API from the
+   same port -- proving the deployment architecture works before spending a single
+   Railway build minute on it.
+   **Still needed:** a GitHub remote (this repo has never been pushed anywhere --
+   Railway deploys from a connected repo), a Railway account (account creation isn't
+   something Claude does), environment variables set in Railway's dashboard (not a
+   committed `.env`), and updating Google Cloud Console's OAuth redirect URI once the
+   real production URL is known.
 9. **Finance** (last, deliberately — most complex, most sensitive data) — live data from
    multiple financial/investment accounts, feeding both the existing (currently
    hardcoded) Finance Pulse widget on HOME and a full Finance tab that doesn't exist yet.

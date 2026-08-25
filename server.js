@@ -534,18 +534,18 @@ app.get('/api/integrations/google/auth', (req, res) => {
 
 app.get('/api/integrations/google/callback', async (req, res) => {
   const { code, error: authError } = req.query;
-  if (authError) return res.redirect('http://localhost:3001/?google=denied');
+  if (authError) return res.redirect(googleCalendar.FRONTEND_URL + '/?google=denied');
   try {
     const client = googleCalendar.newOAuthClient();
     const { tokens } = await client.getToken(code);
     await googleCalendar.saveTokens(tokens);
-    res.redirect('http://localhost:3001/?google=connected');
+    res.redirect(googleCalendar.FRONTEND_URL + '/?google=connected');
   } catch (err) {
     if (missingIntegrationsTable(err)) {
-      return res.redirect('http://localhost:3001/?google=no_table');
+      return res.redirect(googleCalendar.FRONTEND_URL + '/?google=no_table');
     }
     console.error(err);
-    res.redirect('http://localhost:3001/?google=error');
+    res.redirect(googleCalendar.FRONTEND_URL + '/?google=error');
   }
 });
 
@@ -601,6 +601,22 @@ app.put('/api/calendar/calendars', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Production only -- in local dev, CRA's own dev server (port 3001) serves
+// the frontend and proxies /api/* back here instead. In production there's
+// no separate frontend server: this Express process serves the already-built
+// React app directly, so the whole thing is one deployment, one origin, no
+// CORS to worry about. Registered after every /api/* route above so those
+// still win; this only catches whatever's left over (actual page loads).
+if (process.env.NODE_ENV === 'production') {
+  const path = require('path');
+  const clientBuildPath = path.join(__dirname, 'client', 'build');
+  app.use(express.static(clientBuildPath));
+  app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
+    res.sendFile(path.join(clientBuildPath, 'index.html'));
+  });
+}
 
 // Started after the HTTP server is listening -- the bot's own handlers call
 // back into this same server (http://localhost:PORT/api/...), so it needs
