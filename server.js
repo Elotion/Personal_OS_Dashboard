@@ -33,6 +33,23 @@ app.get('/api/entities', (req, res) => {
   handle(res, supabase.from('entities').select('*').order('id'));
 });
 
+// BRAIN's per-entity NOTES textarea -- previously pure client-side state
+// (App.js's entityNotes) with no schema column at all, so anything typed
+// was silently lost on reload. `notes` is a new column (see CLAUDE.md for
+// the migration) -- 404s cleanly pre-migration, same tolerance pattern as
+// every other not-yet-migrated table/column in this app.
+const missingEntityNotesColumn = (error) => error && /notes/i.test(error.message || '');
+
+app.put('/api/entities/:id', async (req, res) => {
+  const result = await supabase.from('entities').update({ notes: req.body.notes }).eq('id', req.params.id).select();
+  if (result.error) {
+    if (missingEntityNotesColumn(result.error)) return res.status(404).json({ error: 'entities.notes column does not exist yet' });
+    console.error(result.error);
+    return res.status(400).json({ error: result.error.message });
+  }
+  res.json(result.data);
+});
+
 // Generated on demand (BRAIN's GENERATE button), not persisted -- entities has
 // no briefing column, so this is a live snapshot each time, not saved history.
 app.post('/api/entities/:id/briefing', async (req, res) => {

@@ -37,7 +37,7 @@ function transformTask(row, entityNameOverride) {
   };
 }
 function transformEntity(row) {
-  return { id: row.id, icon: row.icon, name: row.name, desc: row.description };
+  return { id: row.id, icon: row.icon, name: row.name, desc: row.description, notes: row.notes || '' };
 }
 // habit "done today" is derived by comparing a completion date to the local
 // calendar date, rather than trusting a bare completed_today flag with no date
@@ -379,6 +379,7 @@ export default function App() {
   const [entityNotes, setEntityNotes] = useState({});
   const [entityBriefing, setEntityBriefing] = useState({});
   const [briefingGenerating, setBriefingGenerating] = useState(false);
+  const notesSaveTimer = useRef(null);
 
   // JOURNAL state -- entries backed by the real API (see useEffect above)
   const [journalEntries, setJournalEntries] = useState([]);
@@ -780,6 +781,17 @@ export default function App() {
       })
       .finally(() => setBriefingGenerating(false));
   };
+  // Autosaves as Elo types (debounced, not on every keystroke) -- previously
+  // this was pure local state with no schema column at all, so anything
+  // typed here silently vanished on reload. Local state updates immediately
+  // for a responsive textarea; the actual PUT fires 800ms after typing stops.
+  const updateEntityNotes = (entityId, text) => {
+    setEntityNotes((n) => ({ ...n, [entityId]: text }));
+    if (notesSaveTimer.current) clearTimeout(notesSaveTimer.current);
+    notesSaveTimer.current = setTimeout(() => {
+      apiSend('/api/entities/' + entityId, 'PUT', { notes: text }).catch((e) => console.error('entity notes save failed', e));
+    }, 800);
+  };
 
   // ---- JOURNAL handlers ----
   const toggleJournalRaw = (id) =>
@@ -1155,8 +1167,8 @@ export default function App() {
           open={entityDetailOpen}
           close={closeEntityDetail}
           tasks={rawEntityTasks.map(decorate)}
-          notesValue={entityNotes[selectedEntityRaw.id] ?? selectedEntityRaw.desc}
-          onNotesChange={(v) => setEntityNotes((n) => ({ ...n, [selectedEntityRaw.id]: v }))}
+          notesValue={entityNotes[selectedEntityRaw.id] ?? (selectedEntityRaw.notes || selectedEntityRaw.desc)}
+          onNotesChange={(v) => updateEntityNotes(selectedEntityRaw.id, v)}
           briefing={entityBriefing[selectedEntityRaw.id] || 'No briefing yet. Hit GENERATE to have AI write a status snapshot from your tasks + captures.'}
           briefingLabel={briefingGenerating ? 'GENERATING…' : 'GENERATE'}
           generateBriefing={generateBriefing}

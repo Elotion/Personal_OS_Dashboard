@@ -196,7 +196,8 @@ CREATE TABLE entities (
   name TEXT NOT NULL UNIQUE,
   icon TEXT,
   description TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT NOW(),
+  notes TEXT   -- confirmed live 2026-08-25, BRAIN's per-entity NOTES textarea, autosaved
 );
 -- pre-seeded, ids 1-7: UCLA, HEMS, WORK, FINANCE, HEALTH, LEARNING, PERSONAL
 -- App.js fetches these at runtime and builds an id<->name map — don't hardcode ids elsewhere
@@ -877,15 +878,25 @@ silently fixed, since both need either a migration or an explicit tradeoff call.
    to `.order('id', {ascending:false}).limit(1)` (`server.js`), which can't
    throw on multiple matches.
 
-**Found, not fixed -- flagged for a decision:**
-- **Entity notes (BRAIN's per-entity NOTES textarea) are never persisted
-  anywhere.** No `notes` column exists on `entities`, and `App.js`'s
-  `entityNotes` is a plain `useState({})` -- anything typed there is lost the
-  moment the page reloads, with zero visual indication it isn't saved. This
-  looks and behaves like a real persisted field until the exact moment it
-  silently isn't. Needs a decision (autosave on every keystroke vs. an
-  explicit save action) before adding the migration -- not fixed without
-  that call.
+**Found, not fixed at first -- fixed same day once Elo confirmed the call:**
+- ~~Entity notes (BRAIN's per-entity NOTES textarea) are never persisted
+  anywhere.~~ RESOLVED 2026-08-25. Elo wanted it to "just save" as he types,
+  no button -- added `entities.notes TEXT` (one-column migration, confirmed
+  run) plus `PUT /api/entities/:id` (`server.js`, 404s cleanly pre-migration
+  like everything else) and a debounced autosave in `App.js`
+  (`updateEntityNotes`, 800ms after typing stops -- local state updates
+  instantly for a responsive textarea, the network write is what's
+  debounced, not the UI). `transformEntity` now carries `notes`; the
+  textarea's fallback chain is `entityNotes[id] (this-session edits) ??
+  entity.notes (persisted) ?? entity.desc (helpful starting content when
+  nothing's been saved yet)`. Verified for real, not just "it compiles":
+  curl-confirmed 404 pre-migration, curl round-trip post-migration, then a
+  full browser pass -- typed a real note, waited for the debounced
+  `PUT /api/entities/1` to actually fire (confirmed via network tab), then
+  did a hard page reload and read the textarea's DOM value directly
+  (bypassing a flaky screenshot-timing issue with this session's browser
+  automation, unrelated to the app itself) -- the saved text was there, not
+  the description fallback. Test note cleared back to empty afterward.
 - **DEPLOYMENT RISK, not yet a live bug:** every "local time" helper in this
   app (`localDateStr`, `localTimestampStr`, `formatRange` in `lib/google.js`,
   the hour-of-day math in `/api/analytics/habits`) reads the SERVER
