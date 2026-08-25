@@ -644,13 +644,13 @@ export default function HomeTab(props) {
               {selectedEvents.map((ev, i) =>
                 ev.isNow ? (
                   <div key={'now' + i} style={css('display:flex;align-items:center;gap:8px;flex-shrink:0;')}>
-                    <div style={css('font-size:9px;font-weight:700;letter-spacing:0.06em;color:oklch(0.86 0.17 195);white-space:nowrap;')}>{ev.label}</div>
+                    <div style={css('font-size:10.5px;font-weight:700;letter-spacing:0.06em;color:oklch(0.86 0.17 195);white-space:nowrap;')}>{ev.label}</div>
                     <div style={css('flex:1;height:1px;background:oklch(0.86 0.17 195 / 0.55);box-shadow:0 0 6px oklch(0.86 0.17 195 / 0.6);')} />
                   </div>
                 ) : (
-                  <div key={'ev' + i} style={css('display:flex;gap:14px;padding-bottom:10px;border-bottom:1px solid oklch(0.52 0.15 208);flex-shrink:0;')}>
-                    <div style={css('font-size:11px;font-weight:600;color:oklch(0.55 0.025 228);width:100px;flex-shrink:0;')}>{ev.time}</div>
-                    <div style={css('font-size:12.5px;font-weight:500;')}>{ev.label}</div>
+                  <div key={'ev' + i} style={css('display:flex;gap:14px;padding-bottom:12px;border-bottom:1px solid oklch(0.52 0.15 208);flex-shrink:0;')}>
+                    <div style={css('font-size:13px;font-weight:600;color:oklch(0.6 0.025 228);width:112px;flex-shrink:0;')}>{ev.time}</div>
+                    <div style={css('font-size:14.5px;font-weight:500;')}>{ev.label}</div>
                   </div>
                 )
               )}
