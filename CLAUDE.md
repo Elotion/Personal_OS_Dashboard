@@ -497,7 +497,7 @@ exactly this reason).
   screenshot he'd shared exactly), confirming both this fix and that the
   Sep-vs-Aug date-misread from earlier never affected the underlying data -- once
   actually viewing the right day, it was correct the whole time.
-  **Two real bugs found and fixed during testing:**
+  **Real bugs found and fixed during testing:**
   1. The CONNECT GOOGLE CALENDAR button initially did nothing when clicked --
      reported by Elo as "it just glitches a little bit and nothing happens." Root
      cause: `connectGoogleCalendar()` navigated to the relative path
@@ -542,6 +542,23 @@ exactly this reason).
      means a calendar added in Google later just inherits its sensible default.
      New routes: `GET /api/calendar/calendars` (list with current visible
      state), `PUT /api/calendar/calendars` (save the hidden-ids override).
+  4. `integrations.expires_at` is a plain `TIMESTAMP` (no timezone) column --
+     `saveTokens()` always writes it via `.toISOString()` (an absolute UTC
+     instant), but Postgres drops the `Z` on the way into a timezone-naive
+     column. Reading it back with a bare `new Date(str)` parsed those
+     wall-clock numbers as LOCAL time instead of UTC -- the exact same class
+     of bug already fixed for `habit_completions`/`tasks.completed_at`, just
+     via a different code path -- silently making a token look like it
+     expires ~7 hours later than it really does. Found this the boring way:
+     `GET /api/calendar/events` started returning a real 401 from Google
+     mid-session, because the client believed a genuinely-expired token was
+     still valid and never proactively refreshed it before use. Fixed with
+     a `parseStoredUtcTimestamp()` helper that restores the `Z` before
+     parsing (no migration needed -- the stored value was always correct,
+     only the read-side parsing was wrong). Re-verified directly: forced a
+     refresh, confirmed the newly-stored `expires_at` landed ~59 minutes
+     ahead of actual server time (matching Google's real access-token
+     lifetime), not 7 hours off.
   **Verified end-to-end, not just "it compiles":** real OAuth round-trip
   completed by Elo; `GET /api/integrations/google/status` returns
   `{connected:true}`; `GET /api/calendar/events` returns all 3 of Elo's real
