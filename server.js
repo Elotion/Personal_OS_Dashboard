@@ -4,7 +4,8 @@ const cors = require('cors');
 const supabase = require('./supabaseClient');
 const { z } = require('zod');
 const { askClaude, askClaudeStructured } = require('./lib/anthropic');
-const { getEntityContext, getJournalContext, getEntitiesWithDescriptions } = require('./lib/context');
+const { getEntityContext, getJournalContext, getEntitiesWithDescriptions, getCorrelationData } = require('./lib/context');
+const { localDateStr, localTimestampStr } = require('./lib/dates');
 
 const app = express();
 app.use(cors());
@@ -13,38 +14,6 @@ app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
 const PORT = process.env.PORT || 5050;
-
-// local calendar date (not UTC) -- mirrors localDateStr() in client/src/App.js;
-// a bare toISOString().slice(0,10) drifts a day off in negative-UTC-offset
-// timezones for part of the evening, which would silently misbucket analytics
-function localDateStr(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-// local wall-clock timestamp, deliberately WITHOUT a 'Z'/offset suffix.
-// habit_completions.completed_at and tasks.completed_at are both plain
-// TIMESTAMP columns (no timezone) -- Postgres stores exactly the string it's
-// given, with no conversion. Writing new Date().toISOString() there (as this
-// code originally did) stores the UTC clock reading verbatim, e.g. writes
-// "23:52" into a column meant to answer "what hour did this happen" for a
-// user whose actual local time was 16:52 -- confirmed wrong via direct testing
-// (avg_completion_hour came back as 23 for a toggle done at 4:52pm PDT).
-// Writing local wall-clock time instead makes the stored value ALREADY correct
-// for "what hour, locally" without needing a timezone-aware column type (which
-// would need yet another migration) -- deliberate for a single-user,
-// single-timezone app. Every read of these columns elsewhere in this file
-// parses the result via `new Date(str)`, which JS interprets as local time for
-// an offset-less string, so this stays self-consistent end to end. If this
-// data is ever consumed by something running in a different timezone (e.g. a
-// server deployed elsewhere), this convention needs revisiting.
-function localTimestampStr(d = new Date()) {
-  const pad = (n, len = 2) => String(n).padStart(len, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
-}
 
 // small helper so every route doesn't repeat the same error handling
 function handle(res, promise) {
@@ -362,9 +331,24 @@ app.get('/api/journal', (req, res) => {
   handle(res, supabase.from('journal_entries').select('*').order('created_at', { ascending: false }));
 });
 
-app.post('/api/journal', (req, res) => {
-  const { day, date, tasks_count, captures_count, recap, raw_text } = req.body;
-  handle(res, supabase.from('journal_entries').insert([{ day, date, tasks_count, captures_count, recap, raw_text }]).select());
+// entry_date is a plain 'YYYY-MM-DD' string from the add form's native date
+// input, inserted as-is -- never routed through `new Date()`, which parses a
+// bare date-only string as UTC midnight and would drift the stored day in any
+// negative-UTC-offset timezone (the same class of bug already fixed once for
+// habit_completions/tasks.completed_at, just via a different code path).
+const missingJournalExtractColumns = (error) => error && /(entry_date|mood|themes)/i.test(error.message || '');
+
+app.post('/api/journal', async (req, res) => {
+  const { day, date, tasks_count, captures_count, recap, raw_text, entry_date } = req.body;
+  const body = { day, date, tasks_count, captures_count, recap, raw_text };
+  if (entry_date) body.entry_date = entry_date;
+  let result = await supabase.from('journal_entries').insert([body]).select();
+  if (result.error && missingJournalExtractColumns(result.error) && body.entry_date) {
+    delete body.entry_date;
+    result = await supabase.from('journal_entries').insert([body]).select();
+  }
+  if (result.error) { console.error(result.error); return res.status(400).json({ error: result.error.message }); }
+  res.json(result.data);
 });
 
 app.put('/api/journal/:id', (req, res) => {
@@ -393,6 +377,43 @@ app.post('/api/journal/:id/summary', async (req, res) => {
     const { error } = await supabase.from('journal_entries').update({ recap }).eq('id', req.params.id);
     if (error) { console.error(error); return res.status(400).json({ error: error.message }); }
     res.json({ recap });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reads mood/themes out of a journal entry's raw text. Auto-triggered by the
+// client right after a new entry is created (a separate call, not synchronous
+// inside POST /api/journal above -- keeps journal saves fast), and reused as
+// the manual "re-analyze" affordance after an edit -- one route, two triggers,
+// no second code path.
+app.post('/api/journal/:id/extract', async (req, res) => {
+  try {
+    const entry = await getJournalContext(req.params.id);
+    if (!entry) return res.status(404).json({ error: 'Journal entry not found' });
+    const MoodSchema = z.object({
+      mood: z.number().int().min(1).max(5)
+        .describe('Overall mood of the day based on this entry: 1 = rough/bad day, 5 = great day'),
+      themes: z.array(z.string()).min(1).max(4)
+        .describe('2-4 short lowercase theme tags summarizing the day, e.g. "work stress", "exercise"'),
+    });
+    const prompt =
+      "Read this journal entry and rate the day's overall mood on a 1-5 scale " +
+      '(1 = rough/bad day, 5 = great day), and extract 2-4 short theme tags.\n\n' +
+      (entry.raw_text || '(empty entry)');
+    const parsed = await askClaudeStructured(prompt, MoodSchema);
+    if (!parsed) return res.status(502).json({ error: 'Could not analyze this entry' });
+    const update = await supabase.from('journal_entries')
+      .update({ mood: parsed.mood, themes: parsed.themes }).eq('id', req.params.id);
+    if (update.error) {
+      if (missingJournalExtractColumns(update.error)) {
+        return res.status(404).json({ error: 'mood/themes columns do not exist yet' });
+      }
+      console.error(update.error);
+      return res.status(400).json({ error: update.error.message });
+    }
+    res.json(parsed);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -446,63 +467,54 @@ app.get('/api/analytics/habits', async (req, res) => {
 });
 
 app.get('/api/analytics/correlation', async (req, res) => {
-  const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 14));
-  const windowStart = new Date(Date.now() - days * 86400000);
-
-  const habitsResult = await supabase.from('habits').select('id');
-  if (habitsResult.error) {
-    console.error(habitsResult.error);
-    return res.status(400).json({ error: habitsResult.error.message });
-  }
-  const totalHabits = habitsResult.data.length;
-
-  const completionsResult = await supabase.from('habit_completions')
-    .select('habit_id, completed_at').gte('completed_at', localTimestampStr(windowStart));
-  if (completionsResult.error) {
-    if (missingHabitCompletionsTable(completionsResult.error)) {
+  try {
+    const result = await getCorrelationData(parseInt(req.query.days, 10) || 14);
+    res.json(result);
+  } catch (error) {
+    if (missingHabitCompletionsTable(error)) {
       return res.status(404).json({ error: 'habit_completions table does not exist yet' });
     }
-    console.error(completionsResult.error);
-    return res.status(400).json({ error: completionsResult.error.message });
-  }
-
-  const tasksResult = await supabase.from('tasks')
-    .select('id, completed_at').eq('is_archived', true).gte('completed_at', localTimestampStr(windowStart));
-  if (tasksResult.error) {
-    if (missingTaskCompletedAtColumn(tasksResult.error)) {
+    if (missingTaskCompletedAtColumn(error)) {
       return res.status(404).json({ error: 'tasks.completed_at column does not exist yet' });
     }
-    console.error(tasksResult.error);
-    return res.status(400).json({ error: tasksResult.error.message });
+    console.error(error);
+    res.status(400).json({ error: error.message });
   }
+});
 
-  // bucket both by LOCAL calendar date (see localDateStr note above)
-  const habitsByDay = {};
-  completionsResult.data.forEach((c) => {
-    const k = localDateStr(new Date(c.completed_at));
-    (habitsByDay[k] = habitsByDay[k] || new Set()).add(c.habit_id);
-  });
-  const tasksByDay = {};
-  tasksResult.data.forEach((t) => {
-    if (!t.completed_at) return;
-    const k = localDateStr(new Date(t.completed_at));
-    tasksByDay[k] = (tasksByDay[k] || 0) + 1;
-  });
-
-  const out = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const k = localDateStr(new Date(Date.now() - i * 86400000));
-    const habitsCompleted = habitsByDay[k] ? habitsByDay[k].size : 0;
-    out.push({
-      date: k,
-      habits_completed: habitsCompleted,
-      habits_total: totalHabits,
-      habit_completion_rate: totalHabits > 0 ? Math.round((habitsCompleted / totalHabits) * 100) / 100 : null,
-      tasks_completed_count: tasksByDay[k] || 0,
-    });
+// Phase 4: a plain-English callout of any real pattern across habit
+// completion, task completion, and journal mood. Deliberately NOT persisted
+// (same reasoning as the entity briefing above) -- it's a live snapshot over
+// a rolling window, not a fact about one row, so there's no natural place to
+// cache it. Generated on demand via a button, not on every view, so looking
+// at the page doesn't itself cost a Claude call.
+app.post('/api/analytics/insight', async (req, res) => {
+  try {
+    const { correlation } = await getCorrelationData(parseInt(req.query.days, 10) || 14);
+    const lines = correlation.map((d) =>
+      `${d.date}: habits ${d.habits_completed}/${d.habits_total}` +
+      (d.habit_completion_rate != null ? ` (${Math.round(d.habit_completion_rate * 100)}%)` : '') +
+      `, tasks completed ${d.tasks_completed_count}, mood ${d.mood != null ? d.mood + '/5' : 'n/a'}`
+    ).join('\n');
+    const prompt =
+      'Here is day-by-day data from a personal dashboard: habit completion rate, ' +
+      'tasks completed, and self-reported mood (1-5, higher is better) for each day.\n\n' +
+      lines + '\n\n' +
+      'Write 2-4 sentences pointing out any REAL pattern connecting these (for example ' +
+      'habits vs mood, or habits vs tasks). If the data does not show a clear pattern, ' +
+      'say so plainly instead of inventing one -- do not force a conclusion.';
+    const insight = await askClaude(prompt, { maxTokens: 1024 });
+    res.json({ insight });
+  } catch (error) {
+    if (missingHabitCompletionsTable(error)) {
+      return res.status(404).json({ error: 'habit_completions table does not exist yet' });
+    }
+    if (missingTaskCompletedAtColumn(error)) {
+      return res.status(404).json({ error: 'tasks.completed_at column does not exist yet' });
+    }
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
-
-  res.json({ days, correlation: out });
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -115,7 +115,8 @@ function transformJournal(row) {
     id: row.id, day: row.day, date: row.date,
     tasks: row.tasks_count || 0, captures: row.captures_count || 0,
     recap: row.recap || '', raw: row.raw_text || '',
-    expanded: false, generating: false,
+    mood: row.mood != null ? row.mood : null, themes: row.themes || [],
+    expanded: false, generating: false, extracting: false,
   };
 }
 
@@ -268,8 +269,7 @@ export default function App() {
   const [entityBriefing, setEntityBriefing] = useState({});
   const [briefingGenerating, setBriefingGenerating] = useState(false);
 
-  // JOURNAL state -- entries now backed by the real API (see useEffect above);
-  // recap generation is still a placeholder (no Claude API wiring yet)
+  // JOURNAL state -- entries backed by the real API (see useEffect above)
   const [journalEntries, setJournalEntries] = useState([]);
   const [journalViewMode, setJournalViewMode] = useState('SUMMARY');
   const [journalSearch, setJournalSearch] = useState('');
@@ -278,6 +278,12 @@ export default function App() {
   const [journalAddRaw, setJournalAddRaw] = useState('');
   const [journalEditingId, setJournalEditingId] = useState(null);
   const [journalEditText, setJournalEditText] = useState('');
+  // Phase 4: INSIGHTS view state -- day-by-day data loads automatically (cheap,
+  // deterministic), the generated insight paragraph only on demand (Claude call)
+  const [journalInsightDays, setJournalInsightDays] = useState([]);
+  const [journalInsightLoading, setJournalInsightLoading] = useState(false);
+  const [journalInsightText, setJournalInsightText] = useState('');
+  const [journalInsightGenerating, setJournalInsightGenerating] = useState(false);
 
   const selectedEntityIdRef = useRef(selectedEntityId);
   selectedEntityIdRef.current = selectedEntityId;
@@ -577,6 +583,36 @@ export default function App() {
   const changeJournalViewMode = (mode) => {
     setJournalViewMode(mode);
     setJournalEntries((js) => js.map((j) => ({ ...j, expanded: mode === 'RAW' })));
+    if (mode === 'INSIGHTS') {
+      setJournalInsightLoading(true);
+      apiGet('/api/analytics/correlation?days=14')
+        .then((result) => setJournalInsightDays(result.correlation))
+        .catch((e) => console.error(e))
+        .finally(() => setJournalInsightLoading(false));
+    }
+  };
+  const generateJournalInsight = () => {
+    setJournalInsightGenerating(true);
+    apiSend('/api/analytics/insight?days=14', 'POST', {})
+      .then((result) => setJournalInsightText(result.insight))
+      .catch((e) => console.error(e))
+      .finally(() => setJournalInsightGenerating(false));
+  };
+  // Auto-triggered right after a new entry is created (not blocking the
+  // create itself), and reused as the manual re-analyze control on a card --
+  // one function, two call sites.
+  const extractJournalMood = (id) => {
+    setJournalEntries((js) => js.map((j) => (j.id === id ? { ...j, extracting: true } : j)));
+    apiSend('/api/journal/' + id + '/extract', 'POST', {})
+      .then((result) =>
+        setJournalEntries((js) =>
+          js.map((j) => (j.id === id ? { ...j, extracting: false, mood: result.mood, themes: result.themes } : j))
+        )
+      )
+      .catch((e) => {
+        console.error(e);
+        setJournalEntries((js) => js.map((j) => (j.id === id ? { ...j, extracting: false } : j)));
+      });
   };
   const generateJournalSummary = (id) => {
     setJournalEntries((js) => js.map((j) => (j.id === id ? { ...j, generating: true } : j)));
@@ -598,9 +634,13 @@ export default function App() {
     const day = dayLabelForDate(picked, now);
     const date = picked.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
     apiSend('/api/journal', 'POST', {
-      day, date, tasks_count: 0, captures_count: 0, recap: '', raw_text: raw,
+      day, date, tasks_count: 0, captures_count: 0, recap: '', raw_text: raw, entry_date: journalAddDate,
     })
-      .then((rows) => setJournalEntries((js) => [transformJournal(rows[0]), ...js]))
+      .then((rows) => {
+        const created = transformJournal(rows[0]);
+        setJournalEntries((js) => [created, ...js]);
+        extractJournalMood(created.id);
+      })
       .catch((e) => console.error(e));
     setJournalAddRaw('');
     setJournalAddDate(localDateStr());
@@ -860,6 +900,10 @@ export default function App() {
           setJournalViewMode={changeJournalViewMode}
           journalSearch={journalSearch} setJournalSearch={setJournalSearch}
           toggleJournalRaw={toggleJournalRaw} generateJournalSummary={generateJournalSummary}
+          extractJournalMood={extractJournalMood}
+          journalInsightDays={journalInsightDays} journalInsightLoading={journalInsightLoading}
+          journalInsightText={journalInsightText} journalInsightGenerating={journalInsightGenerating}
+          generateJournalInsight={generateJournalInsight}
           journalAddOpen={journalAddOpen} toggleJournalAdd={toggleJournalAdd}
           journalAddDate={journalAddDate} setJournalAddDate={setJournalAddDate}
           journalAddRaw={journalAddRaw} setJournalAddRaw={setJournalAddRaw}

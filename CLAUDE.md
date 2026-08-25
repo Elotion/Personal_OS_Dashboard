@@ -128,8 +128,9 @@ personal-os-dashboard/
 ├── server.js                # Express API, all routes, talks to Supabase
 ├── supabaseClient.js        # Supabase client init, reads .env
 ├── lib/
-│   ├── anthropic.js          # Shared Claude API client + askClaude() helper
-│   └── context.js            # Fetches + formats Supabase data into Claude-ready text
+│   ├── anthropic.js          # Shared Claude API client + askClaude()/askClaudeStructured()
+│   ├── context.js            # Fetches + formats Supabase data (incl. Claude-ready text)
+│   └── dates.js              # Shared localDateStr()/localTimestampStr() (server-side)
 ├── package.json
 └── client/src/
     ├── App.js                # ALL app state lives here, passed down as props to tabs
@@ -312,7 +313,34 @@ CREATE TABLE journal_entries (
   tasks_count INTEGER DEFAULT 0, captures_count INTEGER DEFAULT 0,
   recap TEXT, raw_text TEXT,
   created_at TIMESTAMP DEFAULT NOW()
+  -- entry_date, mood, themes do NOT exist yet -- Phase 4 migration, see below.
 );
+
+-- PENDING MIGRATION (Phase 4 -- journal as an insight source):
+--   ALTER TABLE journal_entries ADD COLUMN entry_date DATE;
+--   ALTER TABLE journal_entries ADD COLUMN mood INTEGER;      -- 1 (rough day) to 5 (great day)
+--   ALTER TABLE journal_entries ADD COLUMN themes TEXT[];     -- 2-4 short tags
+--
+-- entry_date is a real joinable calendar date -- day/date above are DISPLAY
+-- strings computed once at creation ("YESTERDAY", "AUG 23, 2026"), never
+-- reliable for joining against habit_completions/tasks.completed_at by day.
+-- Populated from the add-form's existing date picker, sent as a plain
+-- 'YYYY-MM-DD' string and never routed through `new Date()` anywhere (a
+-- bare date-only string parses as UTC midnight in JS -- the same class of
+-- bug already fixed once for habit_completions/tasks.completed_at, just via
+-- a different code path; entry_date avoids it by staying a string end to end).
+-- mood/themes are extracted from raw_text via Claude, auto-triggered right
+-- after an entry is created (a separate POST /api/journal/:id/extract call,
+-- not synchronous inside creation -- keeps journal saves fast) and reused as
+-- a manual "re-analyze" control (the ↻ next to mood/themes on a card) for
+-- later edits, since raw_text edits don't auto-re-extract.
+--
+-- Until this migration runs: POST /api/journal silently drops entry_date if
+-- the column is missing (same retry-without-field fallback as
+-- tasks.completed_at); POST /api/journal/:id/extract 404s cleanly instead of
+-- writing anywhere; GET /api/analytics/correlation returns mood: null for
+-- every day instead of failing. All confirmed via direct testing before this
+-- was written, not assumed.
 ```
 
 **Security — fix before deploying anywhere public:** every table currently has an
@@ -392,6 +420,13 @@ exactly this reason).
   `lib/context.js` and passing `name: description` pairs in the prompt;
   re-tested the same note afterward and it correctly picked `HEMS`.
   Cross-checked a `WORK`-shaped note afterward to confirm no regression.
+- Journal mood/theme extraction + the cross-domain INSIGHTS view (Phase 4) — code
+  built and tested 2026-08-25, but the migration (`entry_date`/`mood`/`themes` on
+  `journal_entries`) has NOT been run yet, so this is not fully live. Confirmed
+  directly that everything degrades gracefully until it is: entries still create fine
+  (`entry_date` silently dropped), `/extract` 404s cleanly instead of erroring, and
+  `GET /api/analytics/correlation` returns `mood: null` for every day rather than
+  failing. See the PENDING MIGRATION note on `journal_entries` above for the exact SQL.
 
 **Still fake, not wired to anything real:**
 - Calendar events on HOME — the day cells and week navigation are real, but the events
@@ -487,12 +522,25 @@ from.
      separate review UI to strip out if the parsing is ever trusted enough to
      auto-create. No dedicated voice/mic feature was needed — the capture
      input is a normal text field, as decided going in.
-5. **Journal as a real insight source** — use the Claude bridge from step 4 to extract
-   structured signal (mood, themes) from raw journal text at save time, then build the
-   actual cross-domain correlation view using step 3's habit/task history + this new
-   journal signal. This is the concrete "didn't finish habits → didn't finish tasks"
-   example, now buildable because the underlying data is finally rich enough. Depends on
-   3 and 4 both existing — building it earlier would mean building it twice.
+5. **Journal as a real insight source** — code built and tested 2026-08-25, waiting on
+   the migration above before it's fully live (everything degrades gracefully until
+   then, confirmed directly). `POST /api/journal/:id/extract` reads mood (1-5) + 2-4
+   theme tags out of an entry's raw text via `askClaudeStructured()`, auto-triggered
+   right after creation (not synchronous inside the create route — a design call made
+   after a second review pass flagged that blocking journal saves on a Claude call could
+   look identical to this app's known "new row doesn't appear until reload" quirk).
+   `lib/context.js`'s new `getCorrelationData(days)` extends step 3's day-by-day
+   habit/task bucketing with journal mood, joined on the new `entry_date` column — used
+   by both the existing `GET /api/analytics/correlation` (now returns `mood` per day)
+   and a new `POST /api/analytics/insight` (feeds that data to Claude for a short
+   plain-English pattern callout, explicitly told not to invent a pattern if there isn't
+   one — verified it actually says so on real/empty data rather than forcing a
+   conclusion). The insight paragraph is deliberately NOT persisted, same reasoning as
+   BRAIN's entity briefing — no natural row to attach a rolling-window summary to.
+   New JOURNAL tab view mode, **INSIGHTS**: a day-by-day list (habit rate, tasks done,
+   mood emoji) plus a GENERATE button for the insight paragraph. This is the concrete
+   "didn't finish habits → didn't finish tasks" example from the original roadmap ask,
+   now buildable because steps 2-3 made the underlying data rich enough.
 6. **Google Calendar integration** — OAuth flow; tokens stored in one new general-purpose
    `integrations` table (`provider`, `access_token`, `refresh_token`, `expires_at`,
    `config` — reused for Telegram in step 7, instead of a bespoke table per integration).
