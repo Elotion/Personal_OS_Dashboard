@@ -559,7 +559,7 @@ app.get('/api/integrations/google/status', async (req, res) => {
 
 app.get('/api/calendar/events', async (req, res) => {
   try {
-    const events = await googleCalendar.listTodayEvents();
+    const events = await googleCalendar.listEventsForDate(req.query.date);
     if (events === null) return res.json({ connected: false, events: [] });
     res.json({ connected: true, events });
   } catch (err) {

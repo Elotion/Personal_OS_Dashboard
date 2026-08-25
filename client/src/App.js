@@ -128,6 +128,20 @@ function localDateStr(d = new Date()) {
   const day = String(d.getDate()).padStart(2, '0');
   return y + '-' + m + '-' + day;
 }
+// Resolves HOME's week-strip selection (which week, which day within it) to
+// an actual calendar date -- mirrors the same math HomeTab.js already does
+// for rendering (dow/monday/weekDays), kept here too since App.js is what
+// drives the actual data fetch. Takes `now` as a plain snapshot (not the
+// reactive `now` state) so calling this doesn't need to re-run every second.
+function selectedCalendarDateStr(now, weekOffset, dayIdx) {
+  const dow = now.getDay() === 0 ? 6 : now.getDay() - 1;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - dow + weekOffset * 7);
+  const d = new Date(monday);
+  d.setDate(monday.getDate() + dayIdx);
+  return localDateStr(d);
+}
+
 function dayLabelForDate(d, now) {
   const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
   const diffDays = Math.round((startOf(now) - startOf(d)) / 86400000);
@@ -246,25 +260,31 @@ export default function App() {
       .catch(() => { /* table not there yet -- keep the localStorage/default value */ });
   }, []);
 
-  // Phase 6: Google Calendar. Live-fetches today's events on demand rather
-  // than syncing to a local table -- HOME only ever shows "today", so there's
-  // nothing yet that needs calendar data at rest. Polls every 90s while the
-  // tab is open (the "1-2 minutes" cadence from the roadmap) instead of a
-  // true push subscription -- Google Calendar push needs a public HTTPS
-  // endpoint, which localhost doesn't have; revisit once this is deployed.
+  // Phase 6: Google Calendar. Live-fetches events for whichever day is
+  // selected in HOME's week strip, on demand, rather than syncing to a local
+  // table -- there's nothing yet that needs calendar data at rest. Polls
+  // every 90s while the tab is open (the "1-2 minutes" cadence from the
+  // roadmap) instead of a true push subscription -- Google Calendar push
+  // needs a public HTTPS endpoint, which localhost doesn't have; revisit
+  // once this is deployed.
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [dashboardCalendars, setDashboardCalendars] = useState([]);
   const [calendarManageOpen, setCalendarManageOpen] = useState(false);
 
+  // uses a fresh `new Date()` at call time, not the reactive `now` state
+  // (which ticks every second) -- depending on `now` here would tear down
+  // and rebuild the polling interval every second instead of only when the
+  // user actually changes which day/week they're looking at
   const refreshCalendarEvents = useCallback(() => {
-    apiGet('/api/calendar/events')
+    const dateStr = selectedCalendarDateStr(new Date(), calendarWeekOffset, selectedDayIdx);
+    apiGet('/api/calendar/events?date=' + dateStr)
       .then((result) => {
         setGoogleConnected(result.connected);
         setCalendarEvents(result.events || []);
       })
       .catch((e) => console.error('calendar events load failed', e));
-  }, []);
+  }, [calendarWeekOffset, selectedDayIdx]);
 
   const toggleCalendarManage = () => {
     setCalendarManageOpen((open) => {

@@ -476,16 +476,27 @@ exactly this reason).
   the correlation, quantified it, and added an unprompted causation-direction caveat.
 - Google Calendar on HOME (Phase 6) — done and tested 2026-08-25, real OAuth
   connection + real events confirmed live. `lib/google.js` wraps OAuth
-  (Authorization Code flow, `googleapis`) and `listTodayEvents()` against the real
-  Calendar API. `EVENTS_TODAY`'s hardcoded array is gone -- HOME's CALENDAR card
-  calls `GET /api/calendar/events` (polled every 90s while the tab is open, matching
-  the roadmap's "1-2 minutes" decision) and shows a CONNECT GOOGLE CALENDAR button
-  when nothing's authorized yet. Read-only scope only (`calendar.readonly`) --
-  nothing today needs the dashboard to create events. Deliberately NOT syncing to a
-  local table yet -- HOME only ever needs "today", so there's nothing to gain from
-  persisting a copy until something else (analytics, history) actually needs
-  calendar data at rest; the roadmap's `syncToken`-based incremental sync becomes
-  worth building at that point, not before.
+  (Authorization Code flow, `googleapis`) and `listEventsForDate(dateStr)` against
+  the real Calendar API. `EVENTS_TODAY`'s hardcoded array is gone -- HOME's
+  CALENDAR card calls `GET /api/calendar/events?date=YYYY-MM-DD` (polled every 90s
+  for whichever day is currently selected, matching the roadmap's "1-2 minutes"
+  decision) and shows a CONNECT GOOGLE CALENDAR button when nothing's authorized
+  yet. Read-only scope only (`calendar.readonly`) -- nothing today needs the
+  dashboard to create events. Deliberately NOT syncing to a local table yet --
+  there's nothing to gain from persisting a copy until something else (analytics,
+  history) actually needs calendar data at rest; the roadmap's `syncToken`-based
+  incremental sync becomes worth building at that point, not before.
+  Originally only fetched *today* -- Elo pointed out he couldn't browse forward to
+  see future events (his class schedule, upcoming birthdays) even though HOME's
+  week strip already let him click other days. Fixed by threading the actually
+  selected date (`selectedCalendarDateStr()` in `App.js`, mirroring the
+  week-offset/day-index math `HomeTab.js` already does for rendering) through to
+  the fetch -- `refreshCalendarEvents` now re-fetches whenever the selected
+  day/week changes, not just on a timer. Verified live: navigated to Sep 21, 2026
+  in the browser and got back Elo's real class schedule for that day (matches the
+  screenshot he'd shared exactly), confirming both this fix and that the
+  Sep-vs-Aug date-misread from earlier never affected the underlying data -- once
+  actually viewing the right day, it was correct the whole time.
   **Two real bugs found and fixed during testing:**
   1. The CONNECT GOOGLE CALENDAR button initially did nothing when clicked --
      reported by Elo as "it just glitches a little bit and nothing happens." Root

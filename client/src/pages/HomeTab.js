@@ -147,12 +147,13 @@ export default function HomeTab(props) {
     : (monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' - ' +
        weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })).toUpperCase();
 
-  let selectedEvents = (isCurrentWeek && selectedDayIdx === dow
-    ? (calendarEvents.length > 0 ? calendarEvents : [{ time: '', label: 'No events today.' }])
-    : [{ time: '', label: 'No events scheduled.' }]
+  const isViewingToday = isCurrentWeek && selectedDayIdx === dow;
+  let selectedEvents = (calendarEvents.length > 0
+    ? calendarEvents
+    : [{ time: '', label: isViewingToday ? 'No events today.' : 'No events scheduled.' }]
   ).map((ev) => ({ ...ev, isEvent: true, isNow: false }));
 
-  if (isCurrentWeek && selectedDayIdx === dow) {
+  if (isViewingToday) {
     const nowLabel = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     const toMinutes = (t) => {
