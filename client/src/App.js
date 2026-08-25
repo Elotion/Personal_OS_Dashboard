@@ -81,17 +81,22 @@ function loadHabitStreak() {
 function saveHabitStreak(streak) {
   window.localStorage.setItem(HABIT_STREAK_KEY, JSON.stringify(streak));
 }
-// Which tab was open -- persisted so a refresh doesn't always bounce back to
-// HOME. Purely a per-browser UI preference (no reason for this to ever sync
-// across devices), so localStorage is the right place, not Supabase.
-const ACTIVE_TAB_KEY = 'elo-os-active-tab';
+// "Where was I" -- persisted so a refresh puts Elo back on the tab, view
+// mode, open panel, and in-progress drafts he had before, instead of always
+// bouncing to a blank HOME (reported directly: refreshing while reading/
+// editing an entity's notes on BRAIN lost his place entirely). One combined
+// blob, not fifteen separate keys, written by a single effect below.
+//
+// Deliberately NOT included: which EXISTING item (a habit, goal, or journal
+// entry) is mid-edit, category-picker/drag/fade state. Those would need to
+// be reconciled against server data that's still loading async at mount --
+// far more fragile than restoring "which screen was I looking at," and much
+// lower value. Can be added later if that turns out to matter in practice.
+const UI_STATE_KEY = 'elo-os-ui-state';
 const VALID_TABS = ['HOME', 'CRM', 'BRAIN', 'FINANCE', 'JOURNAL', 'HEALTH'];
-function loadActiveTab() {
-  try {
-    const saved = window.localStorage.getItem(ACTIVE_TAB_KEY);
-    if (VALID_TABS.includes(saved)) return saved;
-  } catch { /* fall through to default */ }
-  return 'HOME';
+function loadUiState() {
+  try { return JSON.parse(window.localStorage.getItem(UI_STATE_KEY)) || {}; }
+  catch { return {}; }
 }
 // Operator card profile -- same localStorage-first, Supabase-when-available
 // pattern as habit completions/streak above, for the same reason: the `profile`
@@ -175,11 +180,15 @@ function dayLabelForDate(d, now) {
 const todayIdx = () => (new Date().getDay() === 0 ? 6 : new Date().getDay() - 1);
 
 export default function App() {
+  // Computed once per mount and read from directly below -- cheap (one small
+  // JSON.parse), and only React's very-first useState call for each field
+  // actually uses it, same as any other non-function useState initial value.
+  const initialUiState = loadUiState();
+
   const [now, setNow] = useState(new Date());
-  const [activeTab, setActiveTab] = useState(loadActiveTab);
-  useEffect(() => {
-    window.localStorage.setItem(ACTIVE_TAB_KEY, activeTab);
-  }, [activeTab]);
+  const [activeTab, setActiveTab] = useState(
+    VALID_TABS.includes(initialUiState.activeTab) ? initialUiState.activeTab : 'HOME'
+  );
 
   // ---- REAL DATA: entities + tasks ----
   const [entityIdByName, setEntityIdByName] = useState({});
@@ -225,9 +234,9 @@ export default function App() {
   const [habitBurst, setHabitBurst] = useState(null);
   const [selectedDayIdx, setSelectedDayIdx] = useState(todayIdx);
   const [calendarWeekOffset, setCalendarWeekOffset] = useState(0);
-  const [habitsManageOpen, setHabitsManageOpen] = useState(false);
-  const [habitAddLabel, setHabitAddLabel] = useState('');
-  const [habitAddCategory, setHabitAddCategory] = useState('PERSONAL');
+  const [habitsManageOpen, setHabitsManageOpen] = useState(!!initialUiState.habitsManageOpen);
+  const [habitAddLabel, setHabitAddLabel] = useState(initialUiState.habitAddLabel || '');
+  const [habitAddCategory, setHabitAddCategory] = useState(initialUiState.habitAddCategory || 'PERSONAL');
   const [editingHabitId, setEditingHabitId] = useState(null);
   const [editingHabitLabel, setEditingHabitLabel] = useState('');
   const [editingHabitCategory, setEditingHabitCategory] = useState('PERSONAL');
@@ -303,7 +312,7 @@ export default function App() {
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [dashboardCalendars, setDashboardCalendars] = useState([]);
-  const [calendarManageOpen, setCalendarManageOpen] = useState(false);
+  const [calendarManageOpen, setCalendarManageOpen] = useState(!!initialUiState.calendarManageOpen);
 
   // uses a fresh `new Date()` at call time, not the reactive `now` state
   // (which ticks every second) -- depending on `now` here would tear down
@@ -373,14 +382,14 @@ export default function App() {
   };
 
   // CRM state
-  const [crmView, setCrmView] = useState('PRIORITY');
-  const [crmSearch, setCrmSearch] = useState('');
-  const [crmAddOpen, setCrmAddOpen] = useState(false);
-  const [crmAddTitle, setCrmAddTitle] = useState('');
-  const [crmAddTimeframe, setCrmAddTimeframe] = useState('TODAY');
-  const [crmAddEntity, setCrmAddEntity] = useState('PERSONAL');
-  const [crmAddIsKey, setCrmAddIsKey] = useState(false);
-  const [crmSmartText, setCrmSmartText] = useState('');
+  const [crmView, setCrmView] = useState(initialUiState.crmView || 'PRIORITY');
+  const [crmSearch, setCrmSearch] = useState(initialUiState.crmSearch || '');
+  const [crmAddOpen, setCrmAddOpen] = useState(!!initialUiState.crmAddOpen);
+  const [crmAddTitle, setCrmAddTitle] = useState(initialUiState.crmAddTitle || '');
+  const [crmAddTimeframe, setCrmAddTimeframe] = useState(initialUiState.crmAddTimeframe || 'TODAY');
+  const [crmAddEntity, setCrmAddEntity] = useState(initialUiState.crmAddEntity || 'PERSONAL');
+  const [crmAddIsKey, setCrmAddIsKey] = useState(!!initialUiState.crmAddIsKey);
+  const [crmSmartText, setCrmSmartText] = useState(initialUiState.crmSmartText || '');
   const [crmSmartParsing, setCrmSmartParsing] = useState(false);
   const [crmDraggingId, setCrmDraggingId] = useState(null);
   const [crmDragOverCol, setCrmDragOverCol] = useState(null);
@@ -388,21 +397,28 @@ export default function App() {
   const [categoryPickerId, setCategoryPickerId] = useState(null);
 
   // BRAIN state
-  const [brainFilter, setBrainFilter] = useState('Entity Dashboard');
-  const [selectedEntityId, setSelectedEntityId] = useState(null);
-  const [entityDetailOpen, setEntityDetailOpen] = useState(false);
-  const [entityNotes, setEntityNotes] = useState({});
+  const [brainFilter, setBrainFilter] = useState(initialUiState.brainFilter || 'Entity Dashboard');
+  const [selectedEntityId, setSelectedEntityId] = useState(initialUiState.selectedEntityId ?? null);
+  // No slide-in animation on a restored panel -- it should just already be
+  // there, the same way it would look if the page had never reloaded.
+  const [entityDetailOpen, setEntityDetailOpen] = useState(!!initialUiState.entityDetailOpen);
+  // Seeded from the persisted blob, not just the server -- the autosave in
+  // updateEntityNotes debounces 800ms before actually writing to Supabase,
+  // so a refresh within that window would otherwise lose whatever was typed
+  // in the last second. This is the in-progress draft; entity.notes (from
+  // the API) is the last value that made it to the database.
+  const [entityNotes, setEntityNotes] = useState(initialUiState.entityNotes || {});
   const [entityBriefing, setEntityBriefing] = useState({});
   const [briefingGenerating, setBriefingGenerating] = useState(false);
   const notesSaveTimer = useRef(null);
 
   // JOURNAL state -- entries backed by the real API (see useEffect above)
   const [journalEntries, setJournalEntries] = useState([]);
-  const [journalViewMode, setJournalViewMode] = useState('SUMMARY');
-  const [journalSearch, setJournalSearch] = useState('');
-  const [journalAddOpen, setJournalAddOpen] = useState(false);
-  const [journalAddDate, setJournalAddDate] = useState(localDateStr());
-  const [journalAddRaw, setJournalAddRaw] = useState('');
+  const [journalViewMode, setJournalViewMode] = useState(initialUiState.journalViewMode || 'SUMMARY');
+  const [journalSearch, setJournalSearch] = useState(initialUiState.journalSearch || '');
+  const [journalAddOpen, setJournalAddOpen] = useState(!!initialUiState.journalAddOpen);
+  const [journalAddDate, setJournalAddDate] = useState(initialUiState.journalAddDate || localDateStr());
+  const [journalAddRaw, setJournalAddRaw] = useState(initialUiState.journalAddRaw || '');
   const [journalEditingId, setJournalEditingId] = useState(null);
   const [journalEditText, setJournalEditText] = useState('');
   // Phase 4: INSIGHTS view state -- day-by-day data loads automatically (cheap,
@@ -411,7 +427,7 @@ export default function App() {
   const [journalInsightLoading, setJournalInsightLoading] = useState(false);
   const [journalInsightText, setJournalInsightText] = useState('');
   const [journalInsightGenerating, setJournalInsightGenerating] = useState(false);
-  const [journalInsightRangeDays, setJournalInsightRangeDaysState] = useState(14);
+  const [journalInsightRangeDays, setJournalInsightRangeDaysState] = useState(initialUiState.journalInsightRangeDays || 14);
 
   // HEALTH state -- sleep log backed by the real API (404s gracefully pre-
   // migration, same tolerance pattern as habit_streak/profile above). Health
@@ -428,7 +444,7 @@ export default function App() {
   const [foodEstimating, setFoodEstimating] = useState(false);
   const [healthData, setHealthData] = useState([]);
   const [healthDataLoading, setHealthDataLoading] = useState(false);
-  const [healthRangeDays, setHealthRangeDaysState] = useState(14);
+  const [healthRangeDays, setHealthRangeDaysState] = useState(initialUiState.healthRangeDays || 14);
   const [healthInsightText, setHealthInsightText] = useState('');
   const [healthInsightGenerating, setHealthInsightGenerating] = useState(false);
 
@@ -823,6 +839,38 @@ export default function App() {
     setJournalEntries((js) => js.map((j) => ({ ...j, expanded: mode === 'RAW' })));
     if (mode === 'INSIGHTS') loadJournalInsightDays(journalInsightRangeDays);
   };
+  // A refresh can restore straight into INSIGHTS mode (see the UI-state
+  // persistence above) without ever going through changeJournalViewMode's
+  // click handler -- this covers that one case, once, on mount. Deliberately
+  // NOT keyed on journalViewMode (that would double-fire the fetch every
+  // time the button switches modes during normal use, since that path
+  // already calls loadJournalInsightDays itself).
+  useEffect(() => {
+    if (journalViewMode === 'INSIGHTS') loadJournalInsightDays(journalInsightRangeDays);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Writes the whole "where was I" blob (see loadUiState above) on every
+  // change to any of the tracked fields -- one write path, not one per field.
+  useEffect(() => {
+    window.localStorage.setItem(UI_STATE_KEY, JSON.stringify({
+      activeTab,
+      habitsManageOpen, habitAddLabel, habitAddCategory,
+      calendarManageOpen,
+      crmView, crmSearch, crmAddOpen, crmAddTitle, crmAddTimeframe, crmAddEntity, crmAddIsKey, crmSmartText,
+      brainFilter, selectedEntityId, entityDetailOpen, entityNotes,
+      journalViewMode, journalSearch, journalAddOpen, journalAddDate, journalAddRaw,
+      journalInsightRangeDays, healthRangeDays,
+    }));
+  }, [
+    activeTab,
+    habitsManageOpen, habitAddLabel, habitAddCategory,
+    calendarManageOpen,
+    crmView, crmSearch, crmAddOpen, crmAddTitle, crmAddTimeframe, crmAddEntity, crmAddIsKey, crmSmartText,
+    brainFilter, selectedEntityId, entityDetailOpen, entityNotes,
+    journalViewMode, journalSearch, journalAddOpen, journalAddDate, journalAddRaw,
+    journalInsightRangeDays, healthRangeDays,
+  ]);
   // Time window is user-adjustable (7/14/30/60/90 days), same reasoning as
   // HEALTH's range picker -- a fixed 14-day window felt stagnant to Elo.
   const setJournalInsightRangeDays = (days) => {

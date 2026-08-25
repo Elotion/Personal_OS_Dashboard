@@ -838,6 +838,34 @@ exactly this reason).
   specific to either feature or to the new AI-assisted flows. Didn't block either phase
   since the underlying data was always correct — worth investigating on its own if it
   keeps showing up, but out of scope for what was asked in either session.
+- **"Where was I" survives a refresh (2026-08-25), via one localStorage blob, not per-tab
+  URLs/routing.** Elo reported that refreshing on BRAIN (or any non-HOME tab) always
+  bounced him back to HOME, then specifically that refreshing mid-edit on an entity's
+  NOTES textarea lost his place and his unsaved typing. `App.js`'s `loadUiState()` /
+  `UI_STATE_KEY` ('elo-os-ui-state') persist: `activeTab`; CRM's view mode, search text,
+  and add-form drafts (including the AI-parse smart-add text); BRAIN's filter and which
+  entity panel is open (`selectedEntityId`/`entityDetailOpen`) plus the in-progress
+  `entityNotes` draft itself (not just what's made it to the database -- the autosave in
+  `updateEntityNotes` debounces 800ms, so this covers the gap a refresh inside that
+  window would otherwise fall into); JOURNAL's view mode, search, add-form draft, and
+  insight range; HEALTH's insight range; and HOME's habit-manage/calendar-manage panel
+  open-state plus add-habit draft. One combined `useEffect` writes the whole blob on any
+  tracked change, rather than fifteen separate localStorage keys each with their own
+  effect. A second small effect covers one edge this created: JOURNAL's INSIGHTS day-by-
+  day data is normally only fetched by the GENERATE-adjacent view-mode button's click
+  handler, so a refresh restoring straight into INSIGHTS mode needed its own mount-only
+  fetch to avoid landing on the view with no data loaded.
+  Deliberately NOT persisted: which EXISTING item (a habit, a goal, a journal entry) is
+  mid-edit, or any category-picker/drag/fade/animation state -- those would need
+  reconciling against server data that's still loading async at mount, which is far more
+  fragile than restoring "which screen/view/panel was open," for much less value. Revisit
+  if that specific gap ever gets reported.
+  Verified directly, not just "it compiles" -- for both the CRM/JOURNAL view-mode cases
+  and the BRAIN case specifically: set `entityDetailOpen`/`selectedEntityId`/`entityNotes`
+  in localStorage via the browser console to simulate "was mid-typing an unsaved note,"
+  reloaded fresh, and confirmed via direct DOM inspection that the panel opened
+  immediately (no slide-in animation needed on a restore) with the exact unsaved draft
+  text in the textarea -- the literal scenario Elo described.
 
 ## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
 before it costs him a future fix-cycle, not a response to one specific report.
