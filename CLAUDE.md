@@ -474,44 +474,49 @@ exactly this reason).
   briefing). Verified against real seeded data with a deliberate mood/habit pattern
   (see the RESOLVED note on `journal_entries` above) -- the insight correctly identified
   the correlation, quantified it, and added an unprompted causation-direction caveat.
-- Google Calendar on HOME (Phase 6) — code built and tested 2026-08-25, migration NOT
-  yet run (see the PENDING note on `integrations` above). `lib/google.js` wraps OAuth
-  (Authorization Code flow, `googleapis`) and a `listTodayEvents()` read against the
-  real Calendar API. `EVENTS_TODAY`'s hardcoded array is gone -- HOME's CALENDAR card
-  now calls `GET /api/calendar/events` (polled every 90s while the tab is open,
-  matching the roadmap's "1-2 minutes" decision) and shows a CONNECT GOOGLE CALENDAR
-  button when nothing's authorized yet. Read-only scope only
-  (`calendar.readonly`) -- nothing today needs the dashboard to create events.
-  Deliberately NOT syncing to a local table yet -- HOME only ever needs "today", so
-  there's nothing to gain from persisting a copy until something else (analytics,
-  history) actually needs calendar data at rest; the roadmap's syncToken-based
-  incremental sync becomes worth building at that point, not before.
-  **Real bug found and fixed during testing:** the CONNECT GOOGLE CALENDAR button
-  initially did nothing when clicked (silently -- no error, no console output) --
-  reported by Elo as "it just glitches a little bit and nothing happens." Root
-  cause: `connectGoogleCalendar()` navigated to the relative path
-  `/api/integrations/google/auth`, which CRA's dev-server proxy does NOT reliably
-  forward for a real full-page navigation the way it does for `fetch()` calls --
-  webpack-dev-server's own SPA fallback intercepts requests whose `Accept` header
-  signals a browser page load (`text/html`, which is what `window.location.href`
-  sends but `fetch()` doesn't) and serves `index.html` instead of proxying to
-  Express, before the request ever reaches port 5050. Confirmed directly: curling
-  that path through port 3001 with an html `Accept` header returned a 200 with the
-  React app's `index.html`, not the expected 302. Every other `/api/*` call in this
-  app is a `fetch()`, which is why this hadn't surfaced before -- this was the
-  first real full-page browser navigation the app has needed to make. Fixed by
-  pointing `connectGoogleCalendar()` at the backend's own port directly
-  (`http://localhost:5050/api/integrations/google/auth`), bypassing the dev-server
-  proxy entirely for this one navigation. Re-verified after the fix: clicking the
-  button now lands on a real `accounts.google.com` sign-in page, confirmed by tab
-  title/origin, not a bounce back to the dashboard.
-  **Verified so far:** the above navigation fix; the auth route redirects to a
-  correctly-formed Google consent URL with the right client ID/scope/redirect URI;
-  the migration is confirmed live (`GET /api/calendar/events` now returns
-  `{connected:false,events:[]}`, not a 404). **Not yet verified:** an actual
-  completed OAuth round-trip and real events rendering on HOME -- that needs Elo's
-  own Google login to finish, which isn't something Claude can or should complete.
-  Full end-to-end verification pending.
+- Google Calendar on HOME (Phase 6) — done and tested 2026-08-25, real OAuth
+  connection + real events confirmed live. `lib/google.js` wraps OAuth
+  (Authorization Code flow, `googleapis`) and `listTodayEvents()` against the real
+  Calendar API. `EVENTS_TODAY`'s hardcoded array is gone -- HOME's CALENDAR card
+  calls `GET /api/calendar/events` (polled every 90s while the tab is open, matching
+  the roadmap's "1-2 minutes" decision) and shows a CONNECT GOOGLE CALENDAR button
+  when nothing's authorized yet. Read-only scope only (`calendar.readonly`) --
+  nothing today needs the dashboard to create events. Deliberately NOT syncing to a
+  local table yet -- HOME only ever needs "today", so there's nothing to gain from
+  persisting a copy until something else (analytics, history) actually needs
+  calendar data at rest; the roadmap's `syncToken`-based incremental sync becomes
+  worth building at that point, not before.
+  **Two real bugs found and fixed during testing:**
+  1. The CONNECT GOOGLE CALENDAR button initially did nothing when clicked --
+     reported by Elo as "it just glitches a little bit and nothing happens." Root
+     cause: `connectGoogleCalendar()` navigated to the relative path
+     `/api/integrations/google/auth`, which CRA's dev-server proxy does NOT
+     reliably forward for a real full-page navigation the way it does for
+     `fetch()` calls -- webpack-dev-server's own SPA fallback intercepts requests
+     whose `Accept` header signals a browser page load (`text/html`, which
+     `window.location.href` sends but `fetch()` doesn't) and serves `index.html`
+     instead of proxying to Express. Confirmed directly: curling that path
+     through port 3001 with an html `Accept` header returned a 200 with
+     `index.html`, not the expected 302. Every other `/api/*` call in this app is
+     a `fetch()`, which is why this hadn't surfaced before. Fixed by pointing
+     `connectGoogleCalendar()` at the backend's own port directly
+     (`http://localhost:5050/...`), bypassing the dev-server proxy for this one
+     navigation.
+  2. After connecting, HOME showed nothing even though Elo's calendar clearly had
+     events -- `listTodayEvents()` only queried `calendarId: 'primary'`, but
+     Elo's actual schedule lives on secondary calendars (School, Work, ...) with
+     the primary calendar unchecked/empty in his own Google Calendar sidebar.
+     Fixed by calling `calendarList.list()` first and querying every calendar
+     with `selected === true` (Google's own flag for "checked in your calendar
+     list"), merging and sorting the results -- so the dashboard shows exactly
+     the calendars Elo has checked, same as Google Calendar's own UI, not just
+     the primary one.
+  **Verified end-to-end, not just "it compiles":** real OAuth round-trip
+  completed by Elo; `GET /api/integrations/google/status` returns
+  `{connected:true}`; `GET /api/calendar/events` returned a real event
+  ("Work", all-day) pulled from a checked secondary calendar; confirmed
+  rendering correctly on HOME in the browser (CONNECT button gone, real event
+  showing).
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still
@@ -624,21 +629,24 @@ from.
    unprompted, correct caveat about causation direction and untracked days — not a
    generic-sounding paragraph. All seeded data deleted afterward, confirmed via a fresh
    fetch that real data was untouched.
-6. **Google Calendar integration** — code built and tested 2026-08-25, migration
-   pending, real OAuth round-trip not yet completed (see "What's real vs. still mock"
-   above for the full writeup). Tokens stored in a new general-purpose `integrations`
-   table (`provider`, `access_token`, `refresh_token`, `expires_at`, `config` — reused
-   for Telegram in step 7, instead of a bespoke table per integration). Scope narrowed
-   to `calendar.readonly` — the only thing built so far is *showing* real events on
-   HOME, not creating them. V1 skips the `syncToken`-based incremental sync originally
-   planned here: HOME only ever needs today's events, live-fetched and polled every 90s
-   (the "1–2 minutes" cadence from this line's original decision), so there's no local
-   table to keep in sync yet and nothing to gain from one until something else
-   (analytics, calendar history) actually needs it — revisit `syncToken` at that point,
-   it's still the right mechanism, just not needed yet. Push notifications were already
-   ruled out for the same reason as before: Google Calendar push needs a public HTTPS
-   endpoint, which localhost doesn't have — revisit once this app is deployed publicly
-   (step 8), same as originally planned.
+6. ~~**Google Calendar integration**~~ — done and tested 2026-08-25, real events
+   confirmed rendering on HOME (see "What's real vs. still mock" above for the full
+   writeup, including two real bugs found and fixed: a dev-server-proxy navigation
+   bug, and events only being pulled from the empty primary calendar instead of
+   Elo's actual checked calendars). Tokens stored in a new general-purpose
+   `integrations` table (`provider`, `access_token`, `refresh_token`, `expires_at`,
+   `config` — reused for Telegram in step 7, instead of a bespoke table per
+   integration). Scope narrowed to `calendar.readonly` — the only thing built so far
+   is *showing* real events on HOME, not creating them. V1 skips the
+   `syncToken`-based incremental sync originally planned here: HOME only ever needs
+   today's events, live-fetched and polled every 90s (the "1–2 minutes" cadence from
+   this line's original decision), so there's no local table to keep in sync yet and
+   nothing to gain from one until something else (analytics, calendar history)
+   actually needs it — revisit `syncToken` at that point, it's still the right
+   mechanism, just not needed yet. Push notifications were already ruled out for the
+   same reason as before: Google Calendar push needs a public HTTPS endpoint, which
+   localhost doesn't have — revisit once this app is deployed publicly (step 8), same
+   as originally planned.
 7. **Telegram bot** — thin client: calls the *same* Express API routes the React app
    calls, never talks to Supabase directly (so logic isn't duplicated across two
    clients); reuses step 4b's natural-language task parsing instead of reimplementing
