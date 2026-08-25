@@ -120,6 +120,13 @@ stand. So, going forward:
   reality more than once already (see the CORRECTION notes on the `habits` table above) —
   the fix is updating it in the same pass as the code change, not as an afterthought.
 - If git isn't initialized, that's a problem to fix immediately, not defer.
+- **Push to GitHub after committing** (added 2026-08-25, once the remote
+  `origin` — `github.com/Elotion/Personal_OS_Dashboard` — actually existed).
+  A local-only commit isn't a real backup if this Mac is what's lost; `git
+  push` after every commit is what makes GitHub the actual disaster-recovery
+  copy Elo asked for, not just a one-time snapshot from the day it was set
+  up. `.env` is still deliberately never pushed (gitignored, holds real
+  secrets) — Elo keeps his own copy of those values separately.
 
 ## File structure
 ```
