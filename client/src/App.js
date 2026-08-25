@@ -708,7 +708,11 @@ export default function App() {
   const wakeUp = () => {
     apiSend('/api/sleep/wake', 'POST', { quality: sleepQualityInput || null })
       .then((row) => {
-        setSleepLog((s) => [transformSleep(row), ...s]);
+        const fresh = transformSleep(row);
+        // Server upserts by logged_date (one row per calendar day), so mirror
+        // that here -- replace any existing entry for the same date rather
+        // than blindly prepending a second one for today.
+        setSleepLog((s) => [fresh, ...s.filter((x) => x.date !== fresh.date)]);
         setSleepPending(null);
         setSleepQualityInput(0);
         loadHealthData(healthRangeDays);

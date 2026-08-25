@@ -767,7 +767,25 @@ exactly this reason).
      entirely by unseen seasoning/salt choices, not the food itself, so an
      estimate from a text description would be a guess dressed up as data;
      fiber/sugar are genuine properties of the food and stayed in.
-  4. **Same-day second follow-up:** moved the bed/wake buttons (plus the
+  4a. **Bug found and fixed via Elo's own testing:** a second bed/wake CLICK
+     cycle on the same calendar day created a SECOND sleep_log row instead of
+     replacing the day's entry -- Elo caught this immediately ("they just
+     create another section... I'm not gonna sleep two times in a row").
+     Root cause: `POST /api/sleep/wake` always did a plain INSERT. Fixed by
+     checking for an existing `sleep_log` row on today's `logged_date` first
+     and UPDATEing it in place instead of inserting a duplicate when one
+     exists -- no schema change/migration needed, purely an app-logic fix
+     (`server.js`). Frontend's `wakeUp()` updated to match: it now dedupes
+     `sleepLog` by `date` before prepending the fresh row, instead of always
+     prepending (which would've left a stale duplicate in local state even
+     with the backend fixed). Verified directly: two full bed->wake cycles on
+     the same day via curl AND via real browser clicks both landed on the
+     same row id, with the second cycle's quality overwriting the first's --
+     confirmed via the actual displayed emoji changing (😄 quality 5 ->
+     😕 quality 2) while the entry count stayed at exactly one. Test data
+     (4 stray rows Elo's own testing had created, all same-day) cleaned up
+     directly afterward.
+  4b. **Same-day second follow-up:** moved the bed/wake buttons (plus the
      quality picker and a 3-most-recent-nights list) from HEALTH onto HOME,
      directly under NUTRITION in the right column -- same layout pattern as
      NUTRITION itself (a short list + an inline action row), not a separate

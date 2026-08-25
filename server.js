@@ -440,18 +440,34 @@ app.post('/api/sleep/wake', async (req, res) => {
   const bedDate = new Date(bedTimeStr);
   const hours = Math.round(((now.getTime() - bedDate.getTime()) / 3600000) * 10) / 10;
 
+  const loggedDate = localDateStr(now);
   const row = {
     bed_time: bedTimeStr, wake_time: localTimestampStr(now),
-    hours, quality: req.body.quality ?? null, logged_date: localDateStr(now),
+    hours, quality: req.body.quality ?? null, logged_date: loggedDate,
   };
-  const insertResult = await supabase.from('sleep_log').insert([row]).select();
-  if (insertResult.error) {
-    if (missingTable(insertResult.error, 'sleep_log')) return res.status(404).json({ error: 'sleep_log table does not exist yet' });
-    console.error(insertResult.error);
-    return res.status(400).json({ error: insertResult.error.message });
+
+  // One sleep_log row per calendar day, not one per wake click -- Elo only
+  // sleeps once a night, so waking up twice on the same date (a mis-click, or
+  // deliberately redoing it) should overwrite that day's entry, not stack a
+  // second one next to it. No unique constraint needed for this -- just check
+  // for an existing row on today's logged_date first.
+  const existingResult = await supabase.from('sleep_log').select('id').eq('logged_date', loggedDate).maybeSingle();
+  if (existingResult.error) {
+    if (missingTable(existingResult.error, 'sleep_log')) return res.status(404).json({ error: 'sleep_log table does not exist yet' });
+    console.error(existingResult.error);
+    return res.status(400).json({ error: existingResult.error.message });
+  }
+
+  const writeResult = existingResult.data
+    ? await supabase.from('sleep_log').update(row).eq('id', existingResult.data.id).select()
+    : await supabase.from('sleep_log').insert([row]).select();
+  if (writeResult.error) {
+    if (missingTable(writeResult.error, 'sleep_log')) return res.status(404).json({ error: 'sleep_log table does not exist yet' });
+    console.error(writeResult.error);
+    return res.status(400).json({ error: writeResult.error.message });
   }
   await supabase.from('sleep_pending').update({ bed_time: null }).eq('id', 1);
-  res.json(insertResult.data[0]);
+  res.json(writeResult.data[0]);
 });
 
 app.delete('/api/sleep/:id', (req, res) => {
