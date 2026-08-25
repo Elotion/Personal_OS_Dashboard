@@ -330,10 +330,20 @@ CREATE TABLE nutrition_log (
   label TEXT NOT NULL,
   kcal INTEGER, protein INTEGER, carbs INTEGER, fat INTEGER,
   logged_date DATE DEFAULT CURRENT_DATE,
-  created_at TIMESTAMP DEFAULT NOW(),
+  created_at TIMESTAMP DEFAULT NOW(),   -- DEFAULT no longer relied on, see note below
   fiber INTEGER,   -- confirmed live 2026-08-25, see RESOLVED note near sleep_log below
   sugar INTEGER    -- same migration -- NOT sodium, see that note for why
 );
+-- RESOLVED 2026-08-25 (same day, follow-up): POST /api/nutrition now writes
+-- created_at explicitly via localTimestampStr(), instead of relying on this
+-- column's own DEFAULT NOW() -- that evaluates on the database server (UTC)
+-- into a timezone-naive column, the same bug class already fixed multiple
+-- times elsewhere in this app. Caught proactively, before it ever produced a
+-- visibly wrong time: created_at had never been displayed anywhere, but
+-- HOME's redesigned NUTRITION card (below) was about to start showing it as
+-- "what time did I log this meal," which would have surfaced the bug
+-- immediately. Verified directly: logged a real meal at 16:31 local, curl-
+-- confirmed created_at stored "16:31", not a UTC-shifted value.
 
 CREATE TABLE journal_entries (
   id SERIAL PRIMARY KEY,
@@ -866,6 +876,36 @@ exactly this reason).
   reloaded fresh, and confirmed via direct DOM inspection that the panel opened
   immediately (no slide-in animation needed on a restore) with the exact unsaved draft
   text in the textarea -- the literal scenario Elo described.
+- **HOME's NUTRITION and GOALS cards were redesigned (2026-08-25) from a reference
+  screenshot Elo shared** (a Claude Design mockup, not this session's own work) --
+  he specifically liked that mockup's per-meal time display and asked for the real
+  NUTRITION card to be rebuilt toward it, plus separately asked for GOALS to be made
+  more visually significant ("something I wanna see every day"), leaving the exact
+  visual treatment up to judgment. Implemented within this app's own existing design
+  language (oklch glow system, `CARD`/`GLOW_MED`/`GLOW_STRONG`) rather than adopting
+  the mockup's different visual style wholesale, which would have looked inconsistent
+  against every other card on HOME.
+  - NUTRITION: each meal row now shows the time it was logged (24-hour, matching the
+    header clock's own convention -- deliberately not the 12-hour format `sleep`'s
+    `formatClockTime` uses, those read differently on purpose), plus separate kcal and
+    protein badges, under a new "TODAY · N MEAL(S)" label. Time comes from
+    `nutrition_log.created_at`, which needed its own fix first -- see the RESOLVED
+    note on `nutrition_log` above (it was silently UTC via the column's own
+    `DEFAULT NOW()`, caught proactively before this display change would have
+    surfaced it as a visibly wrong time).
+  - GOALS: now the single most visually prominent card on HOME by design -- a
+    persistent slow "breathing" glow (`eloGoalGlow` keyframe, `index.css`, 4.5s cycle,
+    deliberately gentle so it reads as ambient emphasis over a full day of the app
+    being open, not a flashing alert), a GOLD border on the card, and bigger/bolder
+    goal text with a GOLD left-border accent per row. Reuses the exact `GOLD` constant
+    already used for key-task stars elsewhere (an app-internal cyan-toned accent, not
+    literally gold-colored) -- this app's own established "this matters" visual
+    language, not a new one invented for this. One real implementation trap worth
+    knowing if this card is touched again: the glow card must NOT carry an inline
+    `box-shadow` -- an inline style always wins over a CSS animation targeting the
+    same property, which would freeze the glow on a single frame. Verified the
+    animation is actually running, not frozen, by sampling `getComputedStyle(...)
+    .boxShadow` twice a few seconds apart and confirming the value genuinely changed.
 
 ## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
 before it costs him a future fix-cycle, not a response to one specific report.

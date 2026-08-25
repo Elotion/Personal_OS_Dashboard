@@ -352,10 +352,16 @@ app.get('/api/nutrition', (req, res) => {
 
 app.post('/api/nutrition', (req, res) => {
   const { label, kcal, protein, carbs, fat, fiber, sugar, logged_date } = req.body;
+  // created_at previously relied on the column's own DEFAULT NOW(), which
+  // evaluates on the database server (UTC) into a timezone-naive column --
+  // harmless while nothing displayed it, but HOME is about to show it as
+  // "what time did I eat this," so it needs to be local, same fix pattern
+  // (and same bug class) already applied to logged_date on this exact route.
   const row = {
     label, kcal, protein, carbs, fat,
     fiber: fiber ?? null, sugar: sugar ?? null,
     logged_date: logged_date || localDateStr(new Date()),
+    created_at: localTimestampStr(new Date()),
   };
   handle(res, supabase.from('nutrition_log').insert([row]).select());
 });

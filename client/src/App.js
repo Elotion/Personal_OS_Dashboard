@@ -128,7 +128,7 @@ function transformGoal(row) {
 function transformNutrition(row) {
   return {
     id: row.id, label: row.label, kcal: row.kcal, protein: row.protein, carbs: row.carbs, fat: row.fat,
-    fiber: row.fiber, sugar: row.sugar,
+    fiber: row.fiber, sugar: row.sugar, loggedAt: row.created_at,
   };
 }
 function transformSleep(row) {

@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { css } from '../css';
-import { CARD, GLOW_MED, GLOW_STRONG, ENTITY_OPTIONS } from '../theme';
+import { CARD, GLOW_MED, GLOW_STRONG, GOLD, ENTITY_OPTIONS } from '../theme';
 
 // resizes/compresses a picked image client-side before it goes anywhere, so the
 // stored data URL stays reasonably small
@@ -33,6 +33,13 @@ const SLEEP_QUALITY_EMOJI = { 1: '😴', 2: '😕', 3: '😐', 4: '🙂', 5: '�
 function formatClockTime(str) {
   if (!str) return '';
   return new Date(str).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+// 24-hour, matching the header clock's own convention (not 12-hour like
+// formatClockTime above, which is used for sleep's "in bed since" phrasing).
+function formatMealTime(str) {
+  if (!str) return '';
+  const d = new Date(str);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 
 const PARTICLE_COLORS = [
@@ -671,14 +678,25 @@ export default function HomeTab(props) {
       {/* ================= RIGHT COLUMN ================= */}
       <div style={css(COL)}>
 
-        {/* GOALS */}
-        <div style={css(CARD + 'padding:18px;')}>
-          <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);margin-bottom:14px;')}>GOALS</div>
+        {/* GOALS -- deliberately the most visually significant card on HOME
+            (persistent breathing glow, GOLD border, bigger/bolder goal text)
+            per Elo's explicit request: something he can't help but see and
+            be reminded of every day. Same GOLD accent already used for key
+            tasks/stars elsewhere, not a new color -- reuses this app's own
+            existing "this matters" visual language instead of inventing one.
+            Note: no inline box-shadow here -- the eloGoalGlow animation
+            (index.css) owns box-shadow entirely; an inline one would always
+            win over the CSS animation and freeze it on a single frame. */}
+        <div className="elo-goal-card" style={css('background:oklch(0.16 0.075 238);border:1.5px solid ' + GOLD + ';border-radius:14px;padding:18px;')}>
+          <div style={css('display:flex;align-items:center;gap:7px;margin-bottom:14px;')}>
+            <span style={css('font-size:13px;')}>🎯</span>
+            <span style={css('font-size:11px;font-weight:800;letter-spacing:0.1em;color:' + GOLD + ';')}>GOALS</span>
+          </div>
 
           <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);margin-bottom:8px;')}>THIS WEEK</div>
           <div style={css('display:flex;flex-direction:column;gap:8px;margin-bottom:16px;')}>
             {weeklyGoals.map((g) => (
-              <div key={g.id} style={css('display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 10px;background:oklch(0.12 0.06 240);border-radius:7px;box-shadow:' + GLOW_MED + ';')}>
+              <div key={g.id} style={css('display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;padding:10px 12px;background:oklch(0.12 0.06 240);border-left:3px solid ' + GOLD + ';border-radius:7px;box-shadow:' + GLOW_MED + ';')}>
                 {editingGoalId === g.id ? (
                   <input
                     autoFocus
@@ -716,7 +734,7 @@ export default function HomeTab(props) {
           <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);margin-bottom:8px;')}>THIS MONTH</div>
           <div style={css('display:flex;flex-direction:column;gap:8px;')}>
             {monthlyGoals.map((g) => (
-              <div key={g.id} style={css('display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 10px;background:oklch(0.12 0.06 240);border-radius:7px;box-shadow:' + GLOW_MED + ';')}>
+              <div key={g.id} style={css('display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;padding:10px 12px;background:oklch(0.12 0.06 240);border-left:3px solid ' + GOLD + ';border-radius:7px;box-shadow:' + GLOW_MED + ';')}>
                 {editingGoalId === g.id ? (
                   <input
                     autoFocus
@@ -764,17 +782,25 @@ export default function HomeTab(props) {
           <div style={css('font-size:11px;color:oklch(0.55 0.025 228);margin-bottom:14px;')}>
             {totalProtein}g protein · {totalCarbs}g carbs · {totalFat}g fat · {totalFiber}g fiber
           </div>
+          <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);margin-bottom:8px;')}>
+            TODAY · {foodLog.length} {foodLog.length === 1 ? 'MEAL' : 'MEALS'}
+          </div>
           <div style={css('display:flex;flex-direction:column;gap:8px;margin-bottom:12px;')}>
             {foodLog.map((item) => (
-              <div key={item.id} style={css('display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 10px;border-radius:7px;border-bottom:1px solid oklch(0.52 0.15 208);box-shadow:' + GLOW_MED + ';')}>
-                <div style={css('font-weight:500;flex:1;min-width:0;')}>{item.label}</div>
-                <div style={css('color:oklch(0.55 0.025 228);flex-shrink:0;')}>{item.kcal} kcal</div>
+              <div key={item.id} style={css('display:flex;align-items:center;gap:10px;font-size:12px;padding:9px 10px;border-radius:7px;border-bottom:1px solid oklch(0.52 0.15 208);box-shadow:' + GLOW_MED + ';')}>
+                <div style={css('font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;color:oklch(0.86 0.17 195);flex-shrink:0;')}>{formatMealTime(item.loggedAt)}</div>
+                <div style={css('font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;')}>{item.label}</div>
+                <div style={css('font-size:10px;font-weight:600;color:oklch(0.65 0.025 228);background:oklch(0.12 0.06 240);padding:3px 7px;border-radius:5px;flex-shrink:0;')}>{item.kcal} kcal</div>
+                <div style={css('font-size:10px;font-weight:600;color:oklch(0.8 0.19 200);background:oklch(0.8 0.19 200 / 0.12);padding:3px 7px;border-radius:5px;flex-shrink:0;')}>{item.protein}p</div>
                 <div
                   onClick={() => deleteFood(item.id)}
                   style={css('width:18px;height:18px;flex-shrink:0;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:11px;')}
                 >✕</div>
               </div>
             ))}
+            {foodLog.length === 0 && (
+              <div style={css('color:oklch(0.5 0.025 228);font-size:11.5px;padding:4px 0;')}>No meals logged yet today.</div>
+            )}
           </div>
           <div style={css('display:flex;gap:8px;')}>
             <input
