@@ -1,14 +1,8 @@
 import React from 'react';
 import { css } from '../css';
-import { CARD, GLOW_MED, GLOW_STRONG } from '../theme';
+import { CARD, GLOW_STRONG } from '../theme';
 
-const QUALITY_EMOJI = { 1: '😴', 2: '😕', 3: '😐', 4: '🙂', 5: '😄' };
 const RANGE_OPTIONS = [7, 14, 30, 60, 90];
-
-function formatClockTime(str) {
-  if (!str) return '';
-  return new Date(str).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-}
 
 // Same technique as HomeTab's buildNetWorthPaths -- a smooth SVG line/area
 // path over a fixed viewBox, just generalized to any numeric series (nulls
@@ -66,26 +60,6 @@ function Sparkline({ values, color }) {
   );
 }
 
-function QualityPicker({ value, onChange }) {
-  return (
-    <div style={css('display:flex;gap:6px;')}>
-      {[1, 2, 3, 4, 5].map((q) => (
-        <div
-          key={q}
-          onClick={() => onChange(value === q ? 0 : q)}
-          title={'Quality ' + q}
-          style={css(
-            'width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;' +
-            (value === q
-              ? 'background:oklch(0.58 0.18 204);box-shadow:' + GLOW_STRONG + ';'
-              : 'background:oklch(0.12 0.06 240);border:1px solid oklch(0.4 0.08 220);opacity:0.6;')
-          )}
-        >{QUALITY_EMOJI[q]}</div>
-      ))}
-    </div>
-  );
-}
-
 // Shared by the AI INSIGHT card's window and DAY BY DAY's window -- they're
 // the same `days` value under the hood (HealthTab has one range, not two).
 function RangePicker({ value, onChange }) {
@@ -107,8 +81,11 @@ function RangePicker({ value, onChange }) {
   );
 }
 
+// HEALTH is pure visual data + on-demand insight generation -- no logging
+// actions live here. Bed/wake clicks and meal logging both live on HOME
+// instead (2026-08-25, at Elo's request: "the health page should be just
+// visual data where I can see and generate insight").
 export default function HealthTab({
-  sleepLog, sleepPending, sleepQualityInput, setSleepQualityInput, goToBed, wakeUp, deleteSleep,
   healthData, healthDataLoading, healthRangeDays, setHealthRangeDays,
   healthInsightText, healthInsightGenerating, generateHealthInsight,
 }) {
@@ -154,45 +131,6 @@ export default function HealthTab({
             <div style={css('height:64px;display:flex;align-items:center;justify-content:center;color:oklch(0.5 0.025 228);font-size:11.5px;')}>Loading…</div>
           ) : (
             <Sparkline values={sleepHours} color="oklch(0.62 0.2 235)" />
-          )}
-
-          <div style={css('display:flex;flex-direction:column;gap:8px;margin:14px 0 12px;max-height:150px;overflow-y:auto;')}>
-            {sleepLog.length === 0 ? (
-              <div style={css('color:oklch(0.5 0.025 228);font-size:11.5px;')}>No sleep logged yet.</div>
-            ) : (
-              sleepLog.map((s) => (
-                <div key={s.id} style={css('display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 10px;border-radius:7px;border-bottom:1px solid oklch(0.52 0.15 208);box-shadow:' + GLOW_MED + ';')}>
-                  <div style={css('font-weight:500;flex:1;min-width:0;')}>{s.date}</div>
-                  <div style={css('color:oklch(0.55 0.025 228);flex-shrink:0;')}>{s.hours}h{s.quality ? ' ' + QUALITY_EMOJI[s.quality] : ''}</div>
-                  <div
-                    onClick={() => deleteSleep(s.id)}
-                    style={css('width:18px;height:18px;flex-shrink:0;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:11px;')}
-                  >✕</div>
-                </div>
-              ))
-            )}
-          </div>
-
-          {/* Bed/wake click flow -- hours are derived from the two
-              timestamps server-side, no manual hours entry. */}
-          {sleepPending ? (
-            <div style={css('display:flex;flex-direction:column;gap:10px;')}>
-              <div style={css('font-size:12px;color:oklch(0.65 0.025 228);')}>
-                😴 In bed since <span style={css('font-weight:700;color:oklch(0.86 0.17 195);')}>{formatClockTime(sleepPending)}</span>
-              </div>
-              <div style={css('display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;')}>
-                <QualityPicker value={sleepQualityInput} onChange={setSleepQualityInput} />
-                <div
-                  onClick={wakeUp}
-                  style={css('font-size:11px;font-weight:700;letter-spacing:0.05em;padding:9px 16px;border-radius:8px;background:oklch(0.58 0.18 204);color:oklch(0.95 0.02 200);cursor:pointer;white-space:nowrap;box-shadow:' + GLOW_STRONG + ';')}
-                >☀️ WOKE UP</div>
-              </div>
-            </div>
-          ) : (
-            <div
-              onClick={goToBed}
-              style={css('width:100%;text-align:center;font-size:12px;font-weight:700;letter-spacing:0.05em;padding:12px;border-radius:8px;background:oklch(0.2 0.08 228);color:oklch(0.92 0.1 198);border:1px solid oklch(0.78 0.2 200);cursor:pointer;box-shadow:' + GLOW_STRONG + ';')}
-            >🛏️ WENT TO BED</div>
           )}
         </div>
 

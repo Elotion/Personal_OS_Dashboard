@@ -1078,6 +1078,9 @@ export default function App() {
           startEditGoal={startEditGoal} saveEditGoal={saveEditGoal} cancelEditGoal={cancelEditGoal}
           foodLog={foodLog} foodInput={foodInput} setFoodInput={setFoodInput} addFood={addFood}
           deleteFood={deleteFood} foodEstimating={foodEstimating}
+          sleepLog={sleepLog} sleepPending={sleepPending}
+          sleepQualityInput={sleepQualityInput} setSleepQualityInput={setSleepQualityInput}
+          goToBed={goToBed} wakeUp={wakeUp} deleteSleep={deleteSleep}
         />
       )}
 
@@ -1119,9 +1122,6 @@ export default function App() {
 
       {activeTab === 'HEALTH' && (
         <HealthTab
-          sleepLog={sleepLog} sleepPending={sleepPending}
-          sleepQualityInput={sleepQualityInput} setSleepQualityInput={setSleepQualityInput}
-          goToBed={goToBed} wakeUp={wakeUp} deleteSleep={deleteSleep}
           healthData={healthData} healthDataLoading={healthDataLoading}
           healthRangeDays={healthRangeDays} setHealthRangeDays={setHealthRangeDays}
           healthInsightText={healthInsightText} healthInsightGenerating={healthInsightGenerating}

@@ -748,12 +748,12 @@ exactly this reason).
   recommended more consistent tracking rather than inventing a pattern. Test
   nutrition entry deleted afterward, confirmed via a fresh `GET /api/nutrition`
   that real data was left untouched (empty, as it should be pre-this-session).
-  **Same-day follow-up (2026-08-25), three changes Elo asked for after using it:**
+  **Same-day follow-up (2026-08-25), four changes Elo asked for after using it:**
   1. Sleep is now a bed/wake CLICK flow, not manual hours entry -- see the
      RESOLVED note in the schema section above for the full `sleep_pending`
-     design. HealthTab's SLEEP card now shows a single "🛏️ WENT TO BED" button
-     when not in bed, or "😴 In bed since {time}" + the quality emoji picker +
-     "☀️ WOKE UP" when pending.
+     design. Shows a single "🛏️ WENT TO BED" button when not in bed, or
+     "😴 In bed since {time}" + the quality emoji picker + "☀️ WOKE UP" when
+     pending.
   2. Both AI insight generators (HEALTH and JOURNAL's INSIGHTS view) had their
      fixed 14-day window replaced with a 7/14/30/60/90-day picker -- Elo felt
      locked into "very stagnant" fixed 14-day data. Changing the range
@@ -767,11 +767,24 @@ exactly this reason).
      entirely by unseen seasoning/salt choices, not the food itself, so an
      estimate from a text description would be a guess dressed up as data;
      fiber/sugar are genuine properties of the food and stayed in.
-  All three verified live in the browser (not just curl): the bed/wake flow
-  end-to-end (button flips, quality picker appears, hours computed correctly,
-  log entry appears, test entry deleted after); the range picker actually
-  re-fetching (`GET /api/health/data?days=60` confirmed firing on click, same
-  for JOURNAL's INSIGHTS view); a real "greek yogurt with berries and granola"
+  4. **Same-day second follow-up:** moved the bed/wake buttons (plus the
+     quality picker and a 3-most-recent-nights list) from HEALTH onto HOME,
+     directly under NUTRITION in the right column -- same layout pattern as
+     NUTRITION itself (a short list + an inline action row), not a separate
+     view. HealthTab lost the button/list entirely and is now pure visual
+     data + on-demand insight generation, per Elo: "the health page should be
+     just visual data where I can see and generate insight." `sleepLog`/
+     `sleepPending`/`goToBed`/`wakeUp`/`deleteSleep` are now `HomeTab` props,
+     not `HealthTab` props -- `HealthTab` only receives `healthData` (the
+     aggregated trend/day-by-day feed) and the insight-generation props.
+  All four verified live in the browser (not just curl): the bed/wake flow
+  end-to-end from its new spot on HOME (button flips, quality picker appears,
+  hours computed correctly, log entry appears in HOME's SLEEP card, HEALTH's
+  sparkline/day-by-day picked up the same entry, test entry deleted after);
+  confirmed HEALTH renders with zero interactive logging controls, just the
+  three visual cards + GENERATE; the range picker actually re-fetching
+  (`GET /api/health/data?days=60` confirmed firing on click, same for
+  JOURNAL's INSIGHTS view); a real "greek yogurt with berries and granola"
   estimate returning distinct fiber/sugar numbers (4g fiber / 24g sugar), not
   a repeated constant.
 
