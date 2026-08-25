@@ -254,6 +254,8 @@ export default function App() {
   // endpoint, which localhost doesn't have; revisit once this is deployed.
   const [calendarEvents, setCalendarEvents] = useState([]);
   const [googleConnected, setGoogleConnected] = useState(false);
+  const [dashboardCalendars, setDashboardCalendars] = useState([]);
+  const [calendarManageOpen, setCalendarManageOpen] = useState(false);
 
   const refreshCalendarEvents = useCallback(() => {
     apiGet('/api/calendar/events')
@@ -263,6 +265,31 @@ export default function App() {
       })
       .catch((e) => console.error('calendar events load failed', e));
   }, []);
+
+  const toggleCalendarManage = () => {
+    setCalendarManageOpen((open) => {
+      const next = !open;
+      if (next) {
+        apiGet('/api/calendar/calendars')
+          .then((result) => setDashboardCalendars(result.calendars || []))
+          .catch((e) => console.error('calendar list load failed', e));
+      }
+      return next;
+    });
+  };
+
+  // Optimistic toggle + persist -- hidden_calendar_ids sent is the full
+  // current hidden set, not just the one being flipped, since the backend
+  // stores it as a plain override list (see setHiddenCalendarIds in
+  // lib/google.js), not a per-id patch.
+  const toggleCalendarVisibility = (id) => {
+    const nextCalendars = dashboardCalendars.map((c) => (c.id === id ? { ...c, visible: !c.visible } : c));
+    setDashboardCalendars(nextCalendars);
+    const hiddenIds = nextCalendars.filter((c) => !c.visible).map((c) => c.id);
+    apiSend('/api/calendar/calendars', 'PUT', { hidden_calendar_ids: hiddenIds })
+      .then(() => refreshCalendarEvents())
+      .catch((e) => console.error('calendar visibility save failed', e));
+  };
 
   useEffect(() => {
     // after the OAuth redirect back from the backend, ?google=connected|denied|error|no_table
@@ -891,6 +918,8 @@ export default function App() {
           now={now} greeting={greeting} dayLabel={dayLabel}
           calendarEvents={calendarEvents} googleConnected={googleConnected}
           connectGoogleCalendar={connectGoogleCalendar}
+          dashboardCalendars={dashboardCalendars} calendarManageOpen={calendarManageOpen}
+          toggleCalendarManage={toggleCalendarManage} toggleCalendarVisibility={toggleCalendarVisibility}
           profile={profile}
           editingProfileField={editingProfileField} editingProfileText={editingProfileText}
           setEditingProfileText={setEditingProfileText}

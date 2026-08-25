@@ -75,6 +75,7 @@ export default function HomeTab(props) {
     editingGoalId, editingGoalText, setEditingGoalText, startEditGoal, saveEditGoal, cancelEditGoal,
     foodLog, foodInput, setFoodInput, addFood, deleteFood,
     calendarEvents, googleConnected, connectGoogleCalendar,
+    dashboardCalendars, calendarManageOpen, toggleCalendarManage, toggleCalendarVisibility,
   } = props;
 
   const photoInputRef = useRef(null);
@@ -583,6 +584,13 @@ export default function HomeTab(props) {
                   style={css('font-size:9.5px;font-weight:700;letter-spacing:0.04em;padding:5px 10px;border-radius:6px;background:oklch(0.58 0.18 204 / 0.15);border:1px solid oklch(0.58 0.18 204);color:oklch(0.75 0.15 210);cursor:pointer;white-space:nowrap;')}
                 >CONNECT GOOGLE CALENDAR</div>
               )}
+              {googleConnected && (
+                <div
+                  onClick={toggleCalendarManage}
+                  title="Choose which calendars to show"
+                  style={css('width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;color:' + (calendarManageOpen ? 'oklch(0.86 0.17 195)' : 'oklch(0.55 0.025 228)') + ';')}
+                >⚙</div>
+              )}
               <div style={css('display:flex;align-items:center;gap:6px;')}>
                 <div
                 className="elo-row-hover"
@@ -598,6 +606,24 @@ export default function HomeTab(props) {
               </div>
             </div>
           </div>
+          {calendarManageOpen && (
+            <div style={css('background:oklch(0.12 0.06 240);border:1px solid oklch(0.48 0.14 210);border-radius:10px;padding:12px 14px;margin-bottom:14px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;max-height:180px;overflow-y:auto;')} className="elo-scroll">
+              {dashboardCalendars.length === 0 ? (
+                <div style={css('font-size:11.5px;color:oklch(0.5 0.025 228);')}>Loading calendars…</div>
+              ) : (
+                dashboardCalendars.map((cal) => (
+                  <div
+                    key={cal.id}
+                    onClick={() => toggleCalendarVisibility(cal.id)}
+                    style={css('display:flex;align-items:center;gap:10px;cursor:pointer;')}
+                  >
+                    <div style={css('width:14px;height:14px;flex-shrink:0;border-radius:4px;border:1.5px solid ' + (cal.visible ? 'oklch(0.86 0.17 195)' : 'oklch(0.4 0.025 228)') + ';background:' + (cal.visible ? 'oklch(0.86 0.17 195 / 0.25)' : 'transparent') + ';')} />
+                    <div style={css('font-size:12px;color:' + (cal.visible ? 'oklch(0.85 0.015 228)' : 'oklch(0.5 0.025 228)') + ';')}>{cal.name}{cal.isPrimary ? ' (primary)' : ''}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
           <div style={css('display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:16px;flex-shrink:0;')}>
             {weekDays.map((d) => (
               <div key={d.idx} onClick={() => setSelectedDayIdx(d.idx)} style={css(d.cellStyle)}>

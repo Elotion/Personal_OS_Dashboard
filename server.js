@@ -571,4 +571,34 @@ app.get('/api/calendar/events', async (req, res) => {
   }
 });
 
+// Lists every calendar this account can see, with its current visible/hidden
+// state (Google's own signal where reliable, this app's stored override
+// otherwise) -- powers the CALENDARS toggle panel on HOME.
+app.get('/api/calendar/calendars', async (req, res) => {
+  try {
+    const calendars = await googleCalendar.listCalendars();
+    if (calendars === null) return res.status(404).json({ error: 'not connected' });
+    res.json({ calendars });
+  } catch (err) {
+    if (missingIntegrationsTable(err)) {
+      return res.status(404).json({ error: 'integrations table does not exist yet' });
+    }
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/calendar/calendars', async (req, res) => {
+  try {
+    await googleCalendar.setHiddenCalendarIds(req.body.hidden_calendar_ids || []);
+    res.json({ ok: true });
+  } catch (err) {
+    if (missingIntegrationsTable(err)) {
+      return res.status(404).json({ error: 'integrations table does not exist yet' });
+    }
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -511,12 +511,35 @@ exactly this reason).
      list"), merging and sorting the results -- so the dashboard shows exactly
      the calendars Elo has checked, same as Google Calendar's own UI, not just
      the primary one.
+  3. Even after fix #2, calendars Elo is *subscribed to* rather than owns
+     (Family, a college's calendar) were still silently excluded -- confirmed
+     directly that Google's `selected` flag is simply absent from the API
+     response for non-owned calendars, checked or not, so there's no reliable
+     signal to read their real sidebar state through this endpoint at all
+     (verified: Family, which looks checked in Elo's sidebar, and a college
+     calendar with a real class happening that day, both came back with
+     `selected` entirely missing). Rather than guess at a heuristic, asked Elo
+     directly what he wanted -- he asked for these included by default AND a way
+     to toggle any calendar on/off from within the dashboard itself. Built both:
+     `defaultVisibility()` in `lib/google.js` now treats non-owned calendars as
+     visible by default (only the primary calendar, detected via `c.primary`,
+     defaults to hidden), and a new CALENDARS toggle panel (⚙ next to the week
+     nav on HOME's CALENDAR card) lets Elo hide/show any individual calendar.
+     Overrides persist in `integrations.config` (the JSONB column already on
+     the table, no new migration needed) as a `hidden_calendar_ids` list layered
+     on top of the defaults -- storing overrides rather than a full allowlist
+     means a calendar added in Google later just inherits its sensible default.
+     New routes: `GET /api/calendar/calendars` (list with current visible
+     state), `PUT /api/calendar/calendars` (save the hidden-ids override).
   **Verified end-to-end, not just "it compiles":** real OAuth round-trip
   completed by Elo; `GET /api/integrations/google/status` returns
-  `{connected:true}`; `GET /api/calendar/events` returned a real event
-  ("Work", all-day) pulled from a checked secondary calendar; confirmed
-  rendering correctly on HOME in the browser (CONNECT button gone, real event
-  showing).
+  `{connected:true}`; `GET /api/calendar/events` returns all 3 of Elo's real
+  events for the day across owned and subscribed calendars ("Andy trip- Japan"
+  from Family, "Work", "Communication Research Methods" from a subscribed
+  college calendar); confirmed the CALENDARS toggle panel in the actual
+  browser -- unchecking a calendar removed its event from the list immediately,
+  re-checking it brought the event back, verified against the live API
+  response at each step, not just the UI redrawing.
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still
