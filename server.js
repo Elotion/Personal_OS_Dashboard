@@ -601,21 +601,4 @@ app.put('/api/calendar/calendars', async (req, res) => {
   }
 });
 
-// Named under /api/integrations/google/, not /api/tasks/google -- /api/tasks
-// is already the CRM tasks REST resource, this is unrelated data (Google
-// Tasks, a separate product from Calendar with its own OAuth scope).
-app.get('/api/integrations/google/tasks', async (req, res) => {
-  try {
-    const tasks = await googleCalendar.listTasks();
-    if (tasks === null) return res.json({ connected: false, tasks: [] });
-    res.json({ connected: true, tasks });
-  } catch (err) {
-    if (missingIntegrationsTable(err)) {
-      return res.status(404).json({ error: 'integrations table does not exist yet' });
-    }
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

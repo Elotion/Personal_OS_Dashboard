@@ -540,20 +540,26 @@ exactly this reason).
   browser -- unchecking a calendar removed its event from the list immediately,
   re-checking it brought the event back, verified against the live API
   response at each step, not just the UI redrawing.
-- Google Tasks (the UCLA class schedule) -- code built 2026-08-25, NOT yet
-  verified against real data. What looked like recurring class events in
-  Google Calendar's UI (Econ 105, MGMT 170, ...) turned out not to be Calendar
-  events at all -- checked every calendar in the account directly, zero
-  matches -- so the working theory is they're actually Google Tasks (due
-  dates, no due *time* in the standard Tasks API), which Calendar's own UI
-  blends into the month view. `listTasks()` in `lib/google.js` and
-  `GET /api/integrations/google/tasks` are built on that theory but genuinely
-  untested -- needs the `tasks.readonly` scope added in Google Cloud Console
-  (Data Access) plus the Tasks API enabled, then Elo reconnecting (Google
-  requires re-consent to add a scope to an existing grant, there's no way
-  around that). Confirmed directly that this is exactly where things stand:
-  hitting the new route with the current, narrower-scoped token returns
-  Google's own `"insufficient authentication scopes"` error, not a bug.
+- ~~Google Tasks~~ -- RETRACTED 2026-08-25, was chasing a problem that didn't
+  exist. The UCLA class schedule (Econ 105, MGMT 170, ...) initially looked
+  like recurring Calendar events with no matching Calendar data anywhere in
+  the account, which led to a wrong theory that they were actually Google
+  Tasks. Root cause of THAT confusion: misread a screenshot of Elo's calendar
+  -- the visible month grid was headed "September 2026", but the dates in it
+  (20, 21, 22...) got read as August dates, i.e. "today." Elo pushed back
+  ("I created them from Google Calendar") and shared a screenshot of one of
+  the actual events, which showed a completely normal recurring Calendar
+  Event (Event details tab, guests, a room, a professor's name) on the
+  School calendar, starting **September 21, 2026** -- not August. Verified
+  directly: querying the School calendar for Sep 21 returns exactly the
+  events in that screenshot (Econ 105 9:30am, MGMT 170 11am, Econ 11 5pm),
+  correctly formatted, already handled by the Calendar integration built
+  earlier -- there was never a second Google product involved, just a
+  same-day mismatch during testing because the class quarter hadn't started
+  yet when "today" was checked. The `tasks.readonly` scope and
+  `listTasks()`/`GET /api/integrations/google/tasks` added for the Tasks
+  theory were reverted -- see the commit that undid Phase 6's tasks-scope
+  commit for the full diff.
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still
