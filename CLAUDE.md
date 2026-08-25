@@ -402,7 +402,14 @@ CREATE TABLE journal_entries (
 -- with the new one, which is what triggers the re-save -- without that listener
 -- a refreshed token would only ever live in memory for one request.
 
--- PENDING MIGRATION (Phase 10 -- HEALTH tab, sleep tracking):
+-- RESOLVED 2026-08-25 (Phase 10 -- HEALTH tab, sleep tracking): sleep_log
+-- confirmed live -- curl round-trip (POST then GET then DELETE) succeeded
+-- immediately after Elo ran this in the Supabase SQL editor, test row cleaned
+-- up afterward. GET/POST/DELETE /api/sleep no longer 404 -- the pre-migration
+-- graceful-degradation path (404 cleanly, HealthTab's SLEEP card shows "No
+-- sleep logged yet", add-sleep form silently no-ops) is now dead code path,
+-- kept as-is since it's harmless and matches the same tolerance pattern used
+-- elsewhere in this app (habit_streak/profile before their migrations ran).
 --   CREATE TABLE sleep_log (
 --     id SERIAL PRIMARY KEY,
 --     hours NUMERIC(3,1) NOT NULL,
@@ -418,13 +425,6 @@ CREATE TABLE journal_entries (
 -- logged_date and journal_entries.entry_date -- never routed through a bare
 -- `new Date()` on either end, to avoid reintroducing the UTC-vs-local bug
 -- class already fixed multiple times elsewhere in this app.
---
--- Until this migration runs: GET/POST/DELETE /api/sleep all 404 cleanly
--- ("sleep_log table does not exist yet") instead of erroring -- confirmed
--- directly via curl before this was written. HealthTab's SLEEP card shows
--- "No sleep logged yet" and the add-sleep form silently no-ops on submit
--- (same graceful-degradation pattern as habit_streak/profile before their
--- migrations ran) rather than crashing.
 ```
 
 **Security — fix before deploying anywhere public:** every table currently has an
@@ -683,11 +683,10 @@ exactly this reason).
   `askClaudeStructured()`, same Zod-schema pattern as CRM task parsing and journal
   mood extraction) replaces the old hardcoded macros in `App.js`'s `addFood()` --
   every meal now gets a real per-food estimate instead of the same fake numbers.
-  `sleep_log` table is a new PENDING migration (see schema section above) -- until
-  it's run, sleep logging degrades gracefully (404s cleanly, form no-ops, SLEEP card
-  shows "No sleep logged yet") rather than erroring, same tolerance pattern already
-  used for `habit_streak`/`profile` before their migrations ran; confirmed directly
-  via curl and in the browser, not assumed.
+  `sleep_log` table migration confirmed run and live 2026-08-25 (see the RESOLVED
+  note in the schema section above) -- sleep logging is fully real now, not just
+  gracefully degrading; verified with a real curl round-trip immediately after Elo
+  ran the migration, test row cleaned up afterward.
   **Two real timezone bugs found and fixed in the existing nutrition routes while
   building this** (the same UTC-vs-local bug class already hit and fixed at least
   three times before elsewhere in this app): `GET /api/nutrition`'s "today" was
@@ -913,8 +912,8 @@ from.
     (before Finance/deployment) at Elo's explicit request, while the Oracle Cloud
     account for step 8 was mid-signup. Sleep tracking + real AI calorie/macro
     estimation + a HEALTH-tab dashboard (sleep/calorie trend, HEALTH-entity habit
-    completion, day-by-day table, on-demand AI insight) — the `sleep_log` table is
-    the one remaining manual migration (see PENDING MIGRATION note above).
+    completion, day-by-day table, on-demand AI insight) — the `sleep_log` table
+    migration ran 2026-08-25 (see RESOLVED note above), so this phase is fully done.
 
 **Cross-cutting note for every step above:** manual DDL is a recurring cost, not a
 one-time one — Claude cannot run schema changes with the credentials this project uses
