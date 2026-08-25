@@ -7,6 +7,7 @@ const { askClaude, askClaudeStructured } = require('./lib/anthropic');
 const { getEntityContext, getJournalContext, getEntitiesWithDescriptions, getCorrelationData } = require('./lib/context');
 const { localDateStr, localTimestampStr } = require('./lib/dates');
 const googleCalendar = require('./lib/google');
+const telegramBot = require('./lib/telegram');
 
 const app = express();
 app.use(cors());
@@ -601,4 +602,10 @@ app.put('/api/calendar/calendars', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Started after the HTTP server is listening -- the bot's own handlers call
+// back into this same server (http://localhost:PORT/api/...), so it needs
+// to already be up.
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  telegramBot.start();
+});

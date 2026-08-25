@@ -131,7 +131,8 @@ personal-os-dashboard/
 │   ├── anthropic.js          # Shared Claude API client + askClaude()/askClaudeStructured()
 │   ├── context.js            # Fetches + formats Supabase data (incl. Claude-ready text)
 │   ├── dates.js              # Shared localDateStr()/localTimestampStr() (server-side)
-│   └── google.js             # Google OAuth2 client + Calendar API (Phase 6)
+│   ├── google.js             # Google OAuth2 client + Calendar API (Phase 6)
+│   └── telegram.js           # Telegram bot (Phase 7) -- long-polling, calls the Express API
 ├── package.json
 └── client/src/
     ├── App.js                # ALL app state lives here, passed down as props to tabs
@@ -158,6 +159,7 @@ SUPABASE_SERVICE_ROLE_KEY=<same page, "service_role" key -- server-side only, ne
 ANTHROPIC_API_KEY=<from console.anthropic.com -> Settings -> API Keys -- server-side only>
 GOOGLE_CLIENT_ID=<from console.cloud.google.com -> APIs & Services -> Clients -- OAuth client ID>
 GOOGLE_CLIENT_SECRET=<same page, paired with the client ID -- server-side only>
+TELEGRAM_BOT_TOKEN=<from @BotFather on Telegram, /newbot -- server-side only>
 ```
 `ANTHROPIC_API_KEY` powers Phase 3a's Claude bridge (`lib/anthropic.js`) -- added and confirmed live 2026-08-23.
 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` power Phase 6's Google Calendar OAuth (`lib/google.js`) --
@@ -168,6 +170,11 @@ single-user app, avoids Google's app-review process), scope
 write access), redirect URI `http://localhost:5050/api/integrations/google/callback`. Testing-mode
 apps get refresh tokens that Google may expire after ~7 days for sensitive scopes -- expect an
 occasional re-auth via the CONNECT GOOGLE CALENDAR button, not a bug.
+`TELEGRAM_BOT_TOKEN` powers Phase 7's bot (`lib/telegram.js`) -- added 2026-08-25. No app
+review or scopes to configure, unlike Google -- created via Telegram's own @BotFather
+(`/newbot`), which hands back a token immediately. The bot (`@ZeusExecBot`) runs inside the
+same backend process (started from `server.js`'s `app.listen()` callback) via long-polling,
+not a webhook -- same reasoning as Calendar: no public HTTPS endpoint on localhost yet.
 `SUPABASE_SERVICE_ROLE_KEY` is the roadmap's security-foundation step (see "Longer-term
 roadmap" below) — `supabaseClient.js` prefers it automatically the moment it's present
 and falls back to the anon key until then, so adding it is the entire fix, no other code
@@ -588,6 +595,37 @@ exactly this reason).
   `listTasks()`/`GET /api/integrations/google/tasks` added for the Tasks
   theory were reverted -- see the commit that undid Phase 6's tasks-scope
   commit for the full diff.
+- Telegram bot (Phase 7) -- code built 2026-08-25, `lib/telegram.js`, running
+  via `telegraf` (long-polling, started from `server.js`). A genuinely thin
+  client -- every handler calls the same Express routes the React app calls
+  (`/api/tasks/parse`, `/api/tasks`, `/api/entities`, `/api/habits`,
+  `/api/calendar/events`, `/api/analytics/insight`), never touches Supabase or
+  `lib/anthropic.js` directly, so there's exactly one place task-parsing and
+  insight logic live. `/start` claims the sending chat as the single
+  authorized user (stored in `integrations`, `provider: 'telegram'`,
+  `config.chat_id`) -- every other chat gets ignored, cheap insurance in case
+  the bot's username ever leaks. Freeform text -> `POST /api/tasks/parse` ->
+  an inline Confirm/Cancel card, same review-before-creation rule as CRM's AI
+  ADD, nothing auto-created. `/today` (key tasks + habit completion + today's
+  calendar events) and `/insight` (the same cross-domain pattern callout
+  JOURNAL's INSIGHTS tab uses) round out v1.
+  **Real bug hit while building this (unrelated to Telegram itself):**
+  `node-telegram-bot-api`, the library originally planned for this, turned
+  out to have been rewritten into an incompatible v2+ API with no stable 0.x
+  version published under the name anymore -- `new TelegramBot(...)` failed
+  with `TypeError: TelegramBot is not a constructor`. Switched to `telegraf`
+  (a well-established, actively maintained alternative) instead of fighting
+  an unfamiliar rewritten API. Also surfaced (see the RESOLVED note on
+  `integrations.expires_at` above) a real Google-token timezone bug during
+  the regression pass after this switch -- unrelated to Telegram, just found
+  while testing alongside it.
+  **Not yet verified:** an actual message round-trip (Elo sending `/start`,
+  a task, `/today`, `/insight` from his own Telegram account and getting
+  real replies) -- that needs Elo's own Telegram client, same as the Google
+  login step did for Calendar. Confirmed so far: the bot token is valid
+  (`getMe` returned real bot info -- `@ZeusExecBot`), the process starts
+  polling without error, and every other backend route still passes a
+  regression check with the bot running alongside them.
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still
@@ -718,13 +756,18 @@ from.
    same reason as before: Google Calendar push needs a public HTTPS endpoint, which
    localhost doesn't have — revisit once this app is deployed publicly (step 8), same
    as originally planned.
-7. **Telegram bot** — thin client: calls the *same* Express API routes the React app
-   calls, never talks to Supabase directly (so logic isn't duplicated across two
-   clients); reuses step 4b's natural-language task parsing instead of reimplementing
-   it; answers questions using step 3/5's analytics and insights so responses are
-   actually informed by real logged data, not generic. Stores its own config in the same
-   `integrations` table as Calendar. Sequenced late because it's an integration layer
-   consuming capabilities built in earlier steps, not new capability on its own.
+7. **Telegram bot** — code built 2026-08-25, message round-trip not yet verified
+   (see "What's real vs. still mock" above for the full writeup). Thin client: calls
+   the *same* Express API routes the React app calls, never talks to Supabase or
+   `lib/anthropic.js` directly (so logic isn't duplicated across two clients); reuses
+   step 4b's natural-language task parsing instead of reimplementing it; answers
+   questions using step 3/5's analytics and insights so responses are actually
+   informed by real logged data, not generic. Stores its own config in the same
+   `integrations` table as Calendar (`provider: 'telegram'`, `config.chat_id`).
+   Runs via `telegraf` (long-polling, not a webhook -- no public HTTPS endpoint on
+   localhost yet, same reasoning as Calendar) inside the same backend process, no
+   third terminal needed. Sequenced late because it's an integration layer consuming
+   capabilities built in earlier steps, not new capability on its own.
 8. **Deploy publicly** (Vercel + Railway or similar) — the security foundation from step
    2 is already in place by this point, which is exactly the right precondition.
 9. **Finance** (last, deliberately — most complex, most sensitive data) — live data from
