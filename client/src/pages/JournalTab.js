@@ -3,17 +3,46 @@ import { css } from '../css';
 import { CARD, GLOW_STRONG } from '../theme';
 
 const MOOD_EMOJI = { 1: '😔', 2: '😕', 3: '😐', 4: '🙂', 5: '😄' };
+const RANGE_OPTIONS = [7, 14, 30, 60, 90];
 
-function InsightsView({ journalInsightDays, journalInsightLoading, journalInsightText, journalInsightGenerating, generateJournalInsight }) {
+// Same window drives both the day-by-day list and the GENERATE call --
+// Elo felt locked into a stagnant fixed 14-day window, so this is now
+// user-adjustable instead of hardcoded.
+function RangePicker({ value, onChange }) {
+  return (
+    <div style={css('display:flex;gap:6px;')}>
+      {RANGE_OPTIONS.map((d) => (
+        <div
+          key={d}
+          onClick={() => onChange(d)}
+          style={css(
+            'font-size:10px;font-weight:700;letter-spacing:0.03em;padding:5px 10px;border-radius:6px;cursor:pointer;white-space:nowrap;' +
+            (value === d
+              ? 'background:oklch(0.58 0.18 204);color:oklch(0.95 0.02 200);box-shadow:' + GLOW_STRONG + ';'
+              : 'background:oklch(0.12 0.06 240);color:oklch(0.55 0.025 228);border:1px solid oklch(0.4 0.08 220);')
+          )}
+        >{d}D</div>
+      ))}
+    </div>
+  );
+}
+
+function InsightsView({
+  journalInsightDays, journalInsightLoading, journalInsightText, journalInsightGenerating, generateJournalInsight,
+  journalInsightRangeDays, setJournalInsightRangeDays,
+}) {
   return (
     <div className="elo-scroll" style={css('flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding-right:6px;')}>
       <div style={css(CARD + 'padding:16px;display:flex;flex-direction:column;gap:10px;')}>
-        <div style={css('display:flex;align-items:center;justify-content:space-between;')}>
-          <div style={css('font-size:10px;font-weight:700;letter-spacing:0.08em;color:oklch(0.86 0.17 195);')}>⭐ AI INSIGHT (LAST 14 DAYS)</div>
-          <div
-            onClick={() => { if (!journalInsightGenerating) generateJournalInsight(); }}
-            style={css('font-size:10px;font-weight:700;letter-spacing:0.05em;padding:6px 12px;border-radius:6px;background:oklch(0.2 0.08 228);color:oklch(0.92 0.1 198);border:1px solid oklch(0.78 0.2 200);box-shadow:' + GLOW_STRONG + ';cursor:pointer;white-space:nowrap;')}
-          >{journalInsightGenerating ? 'GENERATING…' : 'GENERATE'}</div>
+        <div style={css('display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;')}>
+          <div style={css('font-size:10px;font-weight:700;letter-spacing:0.08em;color:oklch(0.86 0.17 195);')}>⭐ AI INSIGHT</div>
+          <div style={css('display:flex;align-items:center;gap:10px;')}>
+            <RangePicker value={journalInsightRangeDays} onChange={setJournalInsightRangeDays} />
+            <div
+              onClick={() => { if (!journalInsightGenerating) generateJournalInsight(); }}
+              style={css('font-size:10px;font-weight:700;letter-spacing:0.05em;padding:6px 12px;border-radius:6px;background:oklch(0.2 0.08 228);color:oklch(0.92 0.1 198);border:1px solid oklch(0.78 0.2 200);box-shadow:' + GLOW_STRONG + ';cursor:pointer;white-space:nowrap;')}
+            >{journalInsightGenerating ? 'GENERATING…' : 'GENERATE'}</div>
+          </div>
         </div>
         <div style={css('font-size:13.5px;line-height:1.55;color:oklch(0.7 0.025 228);')}>
           {journalInsightText || 'No insight yet — hit GENERATE to have AI look for real patterns across your habits, tasks, and mood.'}
@@ -51,6 +80,7 @@ export default function JournalTab({
   journalSearch, setJournalSearch, toggleJournalRaw, generateJournalSummary,
   extractJournalMood,
   journalInsightDays, journalInsightLoading, journalInsightText, journalInsightGenerating, generateJournalInsight,
+  journalInsightRangeDays, setJournalInsightRangeDays,
   journalAddOpen, toggleJournalAdd, journalAddDate, setJournalAddDate,
   journalAddRaw, setJournalAddRaw, submitJournalAdd,
   journalEditingId, journalEditText, setJournalEditText,
@@ -136,6 +166,8 @@ export default function JournalTab({
           journalInsightText={journalInsightText}
           journalInsightGenerating={journalInsightGenerating}
           generateJournalInsight={generateJournalInsight}
+          journalInsightRangeDays={journalInsightRangeDays}
+          setJournalInsightRangeDays={setJournalInsightRangeDays}
         />
       ) : filtered.length > 0 ? (
         <div className="elo-scroll" style={css('flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding-right:6px;')}>

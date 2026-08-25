@@ -109,10 +109,16 @@ function transformGoal(row) {
   return { id: row.id, text: row.text, timeframe: row.timeframe };
 }
 function transformNutrition(row) {
-  return { id: row.id, label: row.label, kcal: row.kcal, protein: row.protein, carbs: row.carbs, fat: row.fat };
+  return {
+    id: row.id, label: row.label, kcal: row.kcal, protein: row.protein, carbs: row.carbs, fat: row.fat,
+    fiber: row.fiber, sugar: row.sugar,
+  };
 }
 function transformSleep(row) {
-  return { id: row.id, hours: row.hours, quality: row.quality, date: row.logged_date };
+  return {
+    id: row.id, hours: row.hours, quality: row.quality, date: row.logged_date,
+    bedTime: row.bed_time, wakeTime: row.wake_time,
+  };
 }
 function transformJournal(row) {
   return {
@@ -244,6 +250,10 @@ export default function App() {
     apiGet('/api/sleep')
       .then((rows) => setSleepLog(rows.map(transformSleep)))
       .catch(() => { /* sleep_log table not there yet -- HEALTH tab shows no sleep data */ });
+
+    apiGet('/api/sleep/pending')
+      .then((result) => setSleepPending(result.bed_time))
+      .catch(() => { /* sleep_pending table not there yet -- bed/wake buttons no-op */ });
 
     // streak starts from localStorage (instant, avoids a flash of "0"), then gets
     // corrected from Supabase once that responds -- Supabase wins when both exist,
@@ -385,18 +395,24 @@ export default function App() {
   const [journalInsightLoading, setJournalInsightLoading] = useState(false);
   const [journalInsightText, setJournalInsightText] = useState('');
   const [journalInsightGenerating, setJournalInsightGenerating] = useState(false);
+  const [journalInsightRangeDays, setJournalInsightRangeDaysState] = useState(14);
 
   // HEALTH state -- sleep log backed by the real API (404s gracefully pre-
   // migration, same tolerance pattern as habit_streak/profile above). Health
   // data (sleep+nutrition+HEALTH-habit trend) loads on demand when the tab is
   // opened, same reasoning as JOURNAL's INSIGHTS view -- cheap/deterministic
   // so it's fine to auto-load, the Claude insight paragraph stays button-gated.
+  //
+  // Sleep is logged by clicking "went to bed" / "woke up" rather than typing
+  // hours by hand (2026-08-25 rework, at Elo's request) -- sleepPending holds
+  // the in-progress night's bed_time (null when not currently "in bed").
   const [sleepLog, setSleepLog] = useState([]);
-  const [sleepHoursInput, setSleepHoursInput] = useState('');
+  const [sleepPending, setSleepPending] = useState(null);
   const [sleepQualityInput, setSleepQualityInput] = useState(0);
   const [foodEstimating, setFoodEstimating] = useState(false);
   const [healthData, setHealthData] = useState([]);
   const [healthDataLoading, setHealthDataLoading] = useState(false);
+  const [healthRangeDays, setHealthRangeDaysState] = useState(14);
   const [healthInsightText, setHealthInsightText] = useState('');
   const [healthInsightGenerating, setHealthInsightGenerating] = useState(false);
 
@@ -681,15 +697,23 @@ export default function App() {
   };
 
   // ---- SLEEP handlers (backed by the real API) ----
-  const addSleep = () => {
-    const hours = parseFloat(sleepHoursInput);
-    if (!hours || hours <= 0) return;
-    const row = { hours, quality: sleepQualityInput || null, logged_date: localDateStr() };
-    apiSend('/api/sleep', 'POST', row)
-      .then((rows) => setSleepLog((s) => [transformSleep(rows[0]), ...s]))
+  // Clicking "went to bed" / "woke up" replaces typing hours by hand -- hours
+  // are derived server-side from the two timestamps (Elo's request,
+  // 2026-08-25). sleepPending mirrors the server's sleep_pending singleton.
+  const goToBed = () => {
+    apiSend('/api/sleep/bedtime', 'POST', {})
+      .then((result) => setSleepPending(result.bed_time))
       .catch((e) => console.error(e));
-    setSleepHoursInput('');
-    setSleepQualityInput(0);
+  };
+  const wakeUp = () => {
+    apiSend('/api/sleep/wake', 'POST', { quality: sleepQualityInput || null })
+      .then((row) => {
+        setSleepLog((s) => [transformSleep(row), ...s]);
+        setSleepPending(null);
+        setSleepQualityInput(0);
+        loadHealthData(healthRangeDays);
+      })
+      .catch((e) => console.error(e));
   };
   const deleteSleep = (id) => {
     setSleepLog((s) => s.filter((x) => x.id !== id));
@@ -697,22 +721,31 @@ export default function App() {
   };
 
   // ---- HEALTH tab handlers ----
-  const loadHealthData = () => {
+  // Time window is user-adjustable (7/14/30/60/90 days), not fixed at 14 --
+  // Elo felt locked into a stagnant fixed window; changing it re-fetches the
+  // day-by-day data immediately (cheap) but does NOT auto-regenerate the AI
+  // insight paragraph (still an explicit GENERATE click, avoiding a Claude
+  // call on every range click).
+  const loadHealthData = (days) => {
     setHealthDataLoading(true);
-    apiGet('/api/health/data?days=14')
+    apiGet('/api/health/data?days=' + (days || healthRangeDays))
       .then((result) => setHealthData(result.health))
       .catch((e) => console.error(e))
       .finally(() => setHealthDataLoading(false));
   };
+  const setHealthRangeDays = (days) => {
+    setHealthRangeDaysState(days);
+    loadHealthData(days);
+  };
   const generateHealthInsight = () => {
     setHealthInsightGenerating(true);
-    apiSend('/api/health/insight?days=14', 'POST', {})
+    apiSend('/api/health/insight?days=' + healthRangeDays, 'POST', {})
       .then((result) => setHealthInsightText(result.insight))
       .catch((e) => console.error(e))
       .finally(() => setHealthInsightGenerating(false));
   };
   useEffect(() => {
-    if (activeTab === 'HEALTH') loadHealthData();
+    if (activeTab === 'HEALTH') loadHealthData(healthRangeDays);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
@@ -737,20 +770,27 @@ export default function App() {
   // ---- JOURNAL handlers ----
   const toggleJournalRaw = (id) =>
     setJournalEntries((js) => js.map((j) => (j.id === id ? { ...j, expanded: !j.expanded } : j)));
+  const loadJournalInsightDays = (days) => {
+    setJournalInsightLoading(true);
+    apiGet('/api/analytics/correlation?days=' + (days || journalInsightRangeDays))
+      .then((result) => setJournalInsightDays(result.correlation))
+      .catch((e) => console.error(e))
+      .finally(() => setJournalInsightLoading(false));
+  };
   const changeJournalViewMode = (mode) => {
     setJournalViewMode(mode);
     setJournalEntries((js) => js.map((j) => ({ ...j, expanded: mode === 'RAW' })));
-    if (mode === 'INSIGHTS') {
-      setJournalInsightLoading(true);
-      apiGet('/api/analytics/correlation?days=14')
-        .then((result) => setJournalInsightDays(result.correlation))
-        .catch((e) => console.error(e))
-        .finally(() => setJournalInsightLoading(false));
-    }
+    if (mode === 'INSIGHTS') loadJournalInsightDays(journalInsightRangeDays);
+  };
+  // Time window is user-adjustable (7/14/30/60/90 days), same reasoning as
+  // HEALTH's range picker -- a fixed 14-day window felt stagnant to Elo.
+  const setJournalInsightRangeDays = (days) => {
+    setJournalInsightRangeDaysState(days);
+    loadJournalInsightDays(days);
   };
   const generateJournalInsight = () => {
     setJournalInsightGenerating(true);
-    apiSend('/api/analytics/insight?days=14', 'POST', {})
+    apiSend('/api/analytics/insight?days=' + journalInsightRangeDays, 'POST', {})
       .then((result) => setJournalInsightText(result.insight))
       .catch((e) => console.error(e))
       .finally(() => setJournalInsightGenerating(false));
@@ -1065,6 +1105,7 @@ export default function App() {
           journalInsightDays={journalInsightDays} journalInsightLoading={journalInsightLoading}
           journalInsightText={journalInsightText} journalInsightGenerating={journalInsightGenerating}
           generateJournalInsight={generateJournalInsight}
+          journalInsightRangeDays={journalInsightRangeDays} setJournalInsightRangeDays={setJournalInsightRangeDays}
           journalAddOpen={journalAddOpen} toggleJournalAdd={toggleJournalAdd}
           journalAddDate={journalAddDate} setJournalAddDate={setJournalAddDate}
           journalAddRaw={journalAddRaw} setJournalAddRaw={setJournalAddRaw}
@@ -1078,10 +1119,11 @@ export default function App() {
 
       {activeTab === 'HEALTH' && (
         <HealthTab
-          sleepLog={sleepLog} sleepHoursInput={sleepHoursInput} setSleepHoursInput={setSleepHoursInput}
+          sleepLog={sleepLog} sleepPending={sleepPending}
           sleepQualityInput={sleepQualityInput} setSleepQualityInput={setSleepQualityInput}
-          addSleep={addSleep} deleteSleep={deleteSleep}
+          goToBed={goToBed} wakeUp={wakeUp} deleteSleep={deleteSleep}
           healthData={healthData} healthDataLoading={healthDataLoading}
+          healthRangeDays={healthRangeDays} setHealthRangeDays={setHealthRangeDays}
           healthInsightText={healthInsightText} healthInsightGenerating={healthInsightGenerating}
           generateHealthInsight={generateHealthInsight}
         />

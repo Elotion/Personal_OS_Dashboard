@@ -176,6 +176,7 @@ export default function HomeTab(props) {
   const totalProtein = foodLog.reduce((s, f) => s + f.protein, 0);
   const totalCarbs = foodLog.reduce((s, f) => s + f.carbs, 0);
   const totalFat = foodLog.reduce((s, f) => s + f.fat, 0);
+  const totalFiber = foodLog.reduce((s, f) => s + (f.fiber || 0), 0);
 
   const openCount = keyTasks.filter((t) => !t.done).length;
 
@@ -754,7 +755,7 @@ export default function HomeTab(props) {
             {totalCalories} <span style={css('font-size:11px;font-weight:500;color:oklch(0.55 0.025 228);')}>kcal</span>
           </div>
           <div style={css('font-size:11px;color:oklch(0.55 0.025 228);margin-bottom:14px;')}>
-            {totalProtein}g protein · {totalCarbs}g carbs · {totalFat}g fat
+            {totalProtein}g protein · {totalCarbs}g carbs · {totalFat}g fat · {totalFiber}g fiber
           </div>
           <div style={css('display:flex;flex-direction:column;gap:8px;margin-bottom:12px;')}>
             {foodLog.map((item) => (

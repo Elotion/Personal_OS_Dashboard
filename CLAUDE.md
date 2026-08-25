@@ -329,7 +329,9 @@ CREATE TABLE nutrition_log (
   label TEXT NOT NULL,
   kcal INTEGER, protein INTEGER, carbs INTEGER, fat INTEGER,
   logged_date DATE DEFAULT CURRENT_DATE,
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT NOW(),
+  fiber INTEGER,   -- confirmed live 2026-08-25, see RESOLVED note near sleep_log below
+  sugar INTEGER    -- same migration -- NOT sodium, see that note for why
 );
 
 CREATE TABLE journal_entries (
@@ -425,6 +427,37 @@ CREATE TABLE journal_entries (
 -- logged_date and journal_entries.entry_date -- never routed through a bare
 -- `new Date()` on either end, to avoid reintroducing the UTC-vs-local bug
 -- class already fixed multiple times elsewhere in this app.
+
+-- RESOLVED 2026-08-25 (same day, follow-up): manual hours entry replaced with
+-- a bed/wake CLICK flow at Elo's explicit request ("I don't have to manually
+-- put how many hours I do, and you can calculate that for me"). hours is now
+-- always server-computed from two real timestamps, never typed in.
+--   CREATE TABLE sleep_pending (
+--     id SERIAL PRIMARY KEY,
+--     bed_time TIMESTAMP
+--   );
+--   INSERT INTO sleep_pending (id, bed_time) VALUES (1, NULL);
+--   ALTER TABLE sleep_pending ENABLE ROW LEVEL SECURITY;
+--   CREATE POLICY "Enable all for public" ON sleep_pending FOR ALL USING (true) WITH CHECK (true);
+--   ALTER TABLE sleep_log ADD COLUMN bed_time TIMESTAMP;
+--   ALTER TABLE sleep_log ADD COLUMN wake_time TIMESTAMP;
+--
+-- sleep_pending is a singleton row (id=1, same pattern as habit_streak/
+-- profile) holding the in-progress night's bed_time, or NULL when not
+-- currently "in bed" -- deliberately NOT a nullable row in sleep_log itself,
+-- so every row that ever lands in sleep_log stays a complete, valid record
+-- (no query anywhere needs to filter out half-finished nights).
+-- POST /api/sleep/bedtime upserts sleep_pending.bed_time = now (clicking it
+-- again just resets the timestamp -- handles "oops, too early" for free).
+-- POST /api/sleep/wake reads sleep_pending, 400s if there's no bed_time set,
+-- otherwise computes hours = (now - bed_time) / 3600 rounded to 1 decimal,
+-- inserts the completed sleep_log row, and clears sleep_pending back to NULL.
+-- Verified live: curl round-trip (bedtime -> wait -> wake) produced the
+-- correct elapsed hours, and a full browser pass confirmed the SLEEP card
+-- flips between "WENT TO BED" and "In bed since {time}" / "WOKE UP" correctly,
+-- with the quality emoji picker shown at wake-time (matching journal's mood
+-- scale, since "how do you feel about your sleep" makes more sense to ask on
+-- waking than at bedtime). Test entry deleted afterward.
 ```
 
 **Security — fix before deploying anywhere public:** every table currently has an
@@ -715,6 +748,32 @@ exactly this reason).
   recommended more consistent tracking rather than inventing a pattern. Test
   nutrition entry deleted afterward, confirmed via a fresh `GET /api/nutrition`
   that real data was left untouched (empty, as it should be pre-this-session).
+  **Same-day follow-up (2026-08-25), three changes Elo asked for after using it:**
+  1. Sleep is now a bed/wake CLICK flow, not manual hours entry -- see the
+     RESOLVED note in the schema section above for the full `sleep_pending`
+     design. HealthTab's SLEEP card now shows a single "🛏️ WENT TO BED" button
+     when not in bed, or "😴 In bed since {time}" + the quality emoji picker +
+     "☀️ WOKE UP" when pending.
+  2. Both AI insight generators (HEALTH and JOURNAL's INSIGHTS view) had their
+     fixed 14-day window replaced with a 7/14/30/60/90-day picker -- Elo felt
+     locked into "very stagnant" fixed 14-day data. Changing the range
+     re-fetches the day-by-day list immediately; GENERATE always uses whatever
+     range is currently selected. No backend change was needed for this --
+     `getCorrelationData`/`getHealthContext` already accepted an arbitrary
+     `days` param (clamped 1-90), only the frontend was hardcoding `?days=14`.
+  3. Nutrition estimation extended to fiber and sugar (`POST
+     /api/nutrition/estimate`), shown in HOME's nutrition summary line.
+     Deliberately NOT sodium -- Elo pointed out sodium is driven almost
+     entirely by unseen seasoning/salt choices, not the food itself, so an
+     estimate from a text description would be a guess dressed up as data;
+     fiber/sugar are genuine properties of the food and stayed in.
+  All three verified live in the browser (not just curl): the bed/wake flow
+  end-to-end (button flips, quality picker appears, hours computed correctly,
+  log entry appears, test entry deleted after); the range picker actually
+  re-fetching (`GET /api/health/data?days=60` confirmed firing on click, same
+  for JOURNAL's INSIGHTS view); a real "greek yogurt with berries and granola"
+  estimate returning distinct fiber/sugar numbers (4g fiber / 24g sugar), not
+  a repeated constant.
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still

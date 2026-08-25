@@ -327,8 +327,12 @@ app.get('/api/nutrition', (req, res) => {
 });
 
 app.post('/api/nutrition', (req, res) => {
-  const { label, kcal, protein, carbs, fat, logged_date } = req.body;
-  const row = { label, kcal, protein, carbs, fat, logged_date: logged_date || localDateStr(new Date()) };
+  const { label, kcal, protein, carbs, fat, fiber, sugar, logged_date } = req.body;
+  const row = {
+    label, kcal, protein, carbs, fat,
+    fiber: fiber ?? null, sugar: sugar ?? null,
+    logged_date: logged_date || localDateStr(new Date()),
+  };
   handle(res, supabase.from('nutrition_log').insert([row]).select());
 });
 
@@ -339,6 +343,14 @@ app.post('/api/nutrition', (req, res) => {
 // specify one, rather than asking a clarifying question every time --
 // this is meant to be fast, low-friction logging, not precise nutrition
 // science, so a rough estimate beats adding a round-trip.
+// Extended (2026-08-25) to also estimate fiber/sugar -- Elo asked for "the
+// important stuff" beyond kcal/protein/carbs/fat, without ballooning into
+// every micronutrient a food label carries. Deliberately NOT sodium -- Elo
+// pointed out that sodium is driven almost entirely by unseen seasoning/salt
+// choices, not by the food itself, so an estimate from a text description
+// would just be a guess dressed up as data, unlike fiber/sugar which really
+// are properties of the food. Fiber/sugar are the two genuinely estimable
+// additions beyond the original four.
 app.post('/api/nutrition/estimate', async (req, res) => {
   try {
     const text = (req.body.text || '').trim();
@@ -348,6 +360,8 @@ app.post('/api/nutrition/estimate', async (req, res) => {
       protein: z.number().int().describe('Estimated grams of protein'),
       carbs: z.number().int().describe('Estimated grams of carbohydrates'),
       fat: z.number().int().describe('Estimated grams of fat'),
+      fiber: z.number().int().describe('Estimated grams of dietary fiber'),
+      sugar: z.number().int().describe('Estimated grams of sugar'),
     });
     const prompt =
       'Estimate the nutrition for this food/meal, assuming a typical single-serving ' +
@@ -368,28 +382,76 @@ app.delete('/api/nutrition/:id', (req, res) => {
 });
 
 // ---------------- SLEEP ----------------
-const missingSleepLogTable = (error) => error && /sleep_log/i.test(error.message || '');
+// Reworked 2026-08-25: sleep is now logged by clicking "went to bed" / "woke
+// up" rather than typing hours by hand -- Elo asked for hours to be derived
+// from the two timestamps, not manually entered. An in-progress night lives
+// in the tiny `sleep_pending` singleton row (same pattern as habit_streak/
+// profile) rather than as a nullable-hours row in sleep_log, so every row
+// that ever lands in sleep_log is a complete, valid record.
+const missingTable = (error, name) => error && new RegExp(name, 'i').test(error.message || '');
 
 app.get('/api/sleep', async (req, res) => {
   const result = await supabase.from('sleep_log').select('*').order('logged_date', { ascending: false }).limit(30);
   if (result.error) {
-    if (missingSleepLogTable(result.error)) return res.status(404).json({ error: 'sleep_log table does not exist yet' });
+    if (missingTable(result.error, 'sleep_log')) return res.status(404).json({ error: 'sleep_log table does not exist yet' });
     console.error(result.error);
     return res.status(400).json({ error: result.error.message });
   }
   res.json(result.data);
 });
 
-app.post('/api/sleep', async (req, res) => {
-  const { hours, quality, logged_date } = req.body;
-  const row = { hours, quality: quality ?? null, logged_date: logged_date || localDateStr(new Date()) };
-  const result = await supabase.from('sleep_log').insert([row]).select();
+app.get('/api/sleep/pending', async (req, res) => {
+  const result = await supabase.from('sleep_pending').select('bed_time').eq('id', 1).maybeSingle();
   if (result.error) {
-    if (missingSleepLogTable(result.error)) return res.status(404).json({ error: 'sleep_log table does not exist yet' });
+    if (missingTable(result.error, 'sleep_pending')) return res.status(404).json({ error: 'sleep_pending table does not exist yet' });
     console.error(result.error);
     return res.status(400).json({ error: result.error.message });
   }
-  res.json(result.data);
+  res.json({ bed_time: result.data ? result.data.bed_time : null });
+});
+
+app.post('/api/sleep/bedtime', async (req, res) => {
+  const result = await supabase.from('sleep_pending')
+    .update({ bed_time: localTimestampStr(new Date()) }).eq('id', 1).select().maybeSingle();
+  if (result.error) {
+    if (missingTable(result.error, 'sleep_pending')) return res.status(404).json({ error: 'sleep_pending table does not exist yet' });
+    console.error(result.error);
+    return res.status(400).json({ error: result.error.message });
+  }
+  res.json({ bed_time: result.data.bed_time });
+});
+
+app.post('/api/sleep/wake', async (req, res) => {
+  const pendingResult = await supabase.from('sleep_pending').select('bed_time').eq('id', 1).maybeSingle();
+  if (pendingResult.error) {
+    if (missingTable(pendingResult.error, 'sleep_pending')) return res.status(404).json({ error: 'sleep_pending table does not exist yet' });
+    console.error(pendingResult.error);
+    return res.status(400).json({ error: pendingResult.error.message });
+  }
+  const bedTimeStr = pendingResult.data ? pendingResult.data.bed_time : null;
+  if (!bedTimeStr) return res.status(400).json({ error: 'No bedtime recorded yet -- click "went to bed" first' });
+
+  // bedTimeStr came from localTimestampStr() (no 'Z'), so `new Date(str)` parses
+  // it as local time -- consistent with how every other TIMESTAMP column in
+  // this app is written and read (see lib/dates.js). Do NOT append 'Z' here --
+  // that would reintroduce the UTC-vs-local bug this project has hit and fixed
+  // multiple times already.
+  const now = new Date();
+  const bedDate = new Date(bedTimeStr);
+  const hours = Math.round(((now.getTime() - bedDate.getTime()) / 3600000) * 10) / 10;
+
+  const row = {
+    bed_time: bedTimeStr, wake_time: localTimestampStr(now),
+    hours, quality: req.body.quality ?? null, logged_date: localDateStr(now),
+  };
+  const insertResult = await supabase.from('sleep_log').insert([row]).select();
+  if (insertResult.error) {
+    if (missingTable(insertResult.error, 'sleep_log')) return res.status(404).json({ error: 'sleep_log table does not exist yet' });
+    console.error(insertResult.error);
+    return res.status(400).json({ error: insertResult.error.message });
+  }
+  await supabase.from('sleep_pending').update({ bed_time: null }).eq('id', 1);
+  res.json(insertResult.data[0]);
 });
 
 app.delete('/api/sleep/:id', (req, res) => {
