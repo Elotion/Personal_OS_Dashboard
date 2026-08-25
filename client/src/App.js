@@ -81,6 +81,18 @@ function loadHabitStreak() {
 function saveHabitStreak(streak) {
   window.localStorage.setItem(HABIT_STREAK_KEY, JSON.stringify(streak));
 }
+// Which tab was open -- persisted so a refresh doesn't always bounce back to
+// HOME. Purely a per-browser UI preference (no reason for this to ever sync
+// across devices), so localStorage is the right place, not Supabase.
+const ACTIVE_TAB_KEY = 'elo-os-active-tab';
+const VALID_TABS = ['HOME', 'CRM', 'BRAIN', 'FINANCE', 'JOURNAL', 'HEALTH'];
+function loadActiveTab() {
+  try {
+    const saved = window.localStorage.getItem(ACTIVE_TAB_KEY);
+    if (VALID_TABS.includes(saved)) return saved;
+  } catch { /* fall through to default */ }
+  return 'HOME';
+}
 // Operator card profile -- same localStorage-first, Supabase-when-available
 // pattern as habit completions/streak above, for the same reason: the `profile`
 // table doesn't exist until the migration in CLAUDE.md is run.
@@ -164,7 +176,10 @@ const todayIdx = () => (new Date().getDay() === 0 ? 6 : new Date().getDay() - 1)
 
 export default function App() {
   const [now, setNow] = useState(new Date());
-  const [activeTab, setActiveTab] = useState('HOME');
+  const [activeTab, setActiveTab] = useState(loadActiveTab);
+  useEffect(() => {
+    window.localStorage.setItem(ACTIVE_TAB_KEY, activeTab);
+  }, [activeTab]);
 
   // ---- REAL DATA: entities + tasks ----
   const [entityIdByName, setEntityIdByName] = useState({});
