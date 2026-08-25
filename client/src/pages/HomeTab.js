@@ -589,39 +589,45 @@ export default function HomeTab(props) {
                 <div
                   onClick={toggleCalendarManage}
                   title="Choose which calendars to show"
-                  style={css('width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;color:' + (calendarManageOpen ? 'oklch(0.86 0.17 195)' : 'oklch(0.55 0.025 228)') + ';')}
+                  style={css('width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;background:' + (calendarManageOpen ? 'oklch(0.86 0.17 195 / 0.15)' : 'transparent') + ';color:' + (calendarManageOpen ? 'oklch(0.86 0.17 195)' : 'oklch(0.6 0.025 228)') + ';')}
                 >⚙</div>
               )}
               <div style={css('display:flex;align-items:center;gap:6px;')}>
                 <div
                 className="elo-row-hover"
                 onClick={() => setCalendarWeekOffset((o) => o - 1)}
-                style={css('width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;font-weight:700;color:oklch(0.6 0.025 228);')}
+                style={css('width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;font-weight:700;color:oklch(0.6 0.025 228);')}
               >‹</div>
-              <div style={css('font-size:10px;font-weight:600;color:oklch(0.5 0.025 228);min-width:110px;text-align:center;')}>{monthLabel}</div>
+              <div style={css('font-size:12px;font-weight:600;color:oklch(0.5 0.025 228);min-width:110px;text-align:center;')}>{monthLabel}</div>
               <div
                 className="elo-row-hover"
                 onClick={() => setCalendarWeekOffset((o) => o + 1)}
-                style={css('width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;font-weight:700;color:oklch(0.6 0.025 228);')}
+                style={css('width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;font-weight:700;color:oklch(0.6 0.025 228);')}
               >›</div>
               </div>
             </div>
           </div>
           {calendarManageOpen && (
-            <div style={css('background:oklch(0.12 0.06 240);border:1px solid oklch(0.48 0.14 210);border-radius:10px;padding:12px 14px;margin-bottom:14px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;max-height:180px;overflow-y:auto;')} className="elo-scroll">
+            <div style={css('background:oklch(0.12 0.06 240);border:1px solid oklch(0.48 0.14 210);border-radius:10px;padding:14px 16px;margin-bottom:14px;flex-shrink:0;display:flex;flex-direction:column;gap:12px;max-height:240px;overflow-y:auto;')} className="elo-scroll">
               {dashboardCalendars.length === 0 ? (
-                <div style={css('font-size:11.5px;color:oklch(0.5 0.025 228);')}>Loading calendars…</div>
+                <div style={css('font-size:13px;color:oklch(0.5 0.025 228);')}>Loading calendars…</div>
               ) : (
-                dashboardCalendars.map((cal) => (
-                  <div
-                    key={cal.id}
-                    onClick={() => toggleCalendarVisibility(cal.id)}
-                    style={css('display:flex;align-items:center;gap:10px;cursor:pointer;')}
-                  >
-                    <div style={css('width:14px;height:14px;flex-shrink:0;border-radius:4px;border:1.5px solid ' + (cal.visible ? 'oklch(0.86 0.17 195)' : 'oklch(0.4 0.025 228)') + ';background:' + (cal.visible ? 'oklch(0.86 0.17 195 / 0.25)' : 'transparent') + ';')} />
-                    <div style={css('font-size:12px;color:' + (cal.visible ? 'oklch(0.85 0.015 228)' : 'oklch(0.5 0.025 228)') + ';')}>{cal.name}{cal.isPrimary ? ' (primary)' : ''}</div>
-                  </div>
-                ))
+                // checked (visible) calendars first, so it's obvious at a glance
+                // what's currently showing vs. hidden, instead of scattered in
+                // whatever order Google returns them in -- re-sorts live as
+                // calendars are toggled, so a newly-checked one moves straight up
+                [...dashboardCalendars]
+                  .sort((a, b) => Number(b.visible) - Number(a.visible) || a.name.localeCompare(b.name))
+                  .map((cal) => (
+                    <div
+                      key={cal.id}
+                      onClick={() => toggleCalendarVisibility(cal.id)}
+                      style={css('display:flex;align-items:center;gap:12px;cursor:pointer;')}
+                    >
+                      <div style={css('width:20px;height:20px;flex-shrink:0;border-radius:5px;border:2px solid ' + (cal.visible ? 'oklch(0.86 0.17 195)' : 'oklch(0.4 0.025 228)') + ';background:' + (cal.visible ? 'oklch(0.86 0.17 195 / 0.25)' : 'transparent') + ';')} />
+                      <div style={css('font-size:14.5px;color:' + (cal.visible ? 'oklch(0.85 0.015 228)' : 'oklch(0.5 0.025 228)') + ';')}>{cal.name}{cal.isPrimary ? ' (primary)' : ''}</div>
+                    </div>
+                  ))
               )}
             </div>
           )}
