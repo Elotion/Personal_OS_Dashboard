@@ -906,6 +906,17 @@ exactly this reason).
     same property, which would freeze the glow on a single frame. Verified the
     animation is actually running, not frozen, by sampling `getComputedStyle(...)
     .boxShadow` twice a few seconds apart and confirming the value genuinely changed.
+  - **Same-day follow-up:** Elo didn't want the "Add a weekly/monthly goal" input
+    permanently visible once goals already exist in that section -- only as an
+    inviting first prompt when a section is genuinely empty. Now: empty section shows
+    the full input (unchanged); once it has at least one goal, the input collapses to
+    a bare `+` button (same collapse-behind-a-button pattern CRM's own "+ ADD" already
+    uses), which reveals the input on click and closes it again automatically after a
+    successful add (or on Escape). New `weeklyGoalAddOpen`/`monthlyGoalAddOpen` state
+    in `App.js`, included in the same UI-state persistence blob as everything else on
+    this page. Verified live: with both sections already populated, both collapsed to
+    `+` buttons on load; clicking one revealed the input; Escape collapsed it again
+    with nothing added.
 
 ## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
 before it costs him a future fix-cycle, not a response to one specific report.

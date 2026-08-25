@@ -247,6 +247,12 @@ export default function App() {
   const monthlyGoals = useMemo(() => goals.filter((g) => g.timeframe === 'THIS MONTH'), [goals]);
   const [weeklyInput, setWeeklyInput] = useState('');
   const [monthlyInput, setMonthlyInput] = useState('');
+  // The add-goal input only shows by default when a section is genuinely
+  // empty (an inviting first prompt); once goals exist it collapses to a
+  // bare + button, toggled open on click -- same pattern as CRM's own
+  // "+ ADD" button. Closes itself again right after a successful add.
+  const [weeklyGoalAddOpen, setWeeklyGoalAddOpen] = useState(!!initialUiState.weeklyGoalAddOpen);
+  const [monthlyGoalAddOpen, setMonthlyGoalAddOpen] = useState(!!initialUiState.monthlyGoalAddOpen);
   const [editingGoalId, setEditingGoalId] = useState(null);
   const [editingGoalText, setEditingGoalText] = useState('');
 
@@ -687,6 +693,7 @@ export default function App() {
       .then((rows) => setGoals((g) => [...g, transformGoal(rows[0])]))
       .catch((e) => console.error(e));
     setWeeklyInput('');
+    setWeeklyGoalAddOpen(false);
   };
   const addMonthlyGoal = () => {
     const text = monthlyInput.trim();
@@ -694,6 +701,7 @@ export default function App() {
     apiSend('/api/goals', 'POST', { text, timeframe: 'THIS MONTH', entity_id: null })
       .then((rows) => setGoals((g) => [...g, transformGoal(rows[0])]))
       .catch((e) => console.error(e));
+    setMonthlyGoalAddOpen(false);
     setMonthlyInput('');
   };
   const deleteGoal = (id) => {
@@ -856,7 +864,7 @@ export default function App() {
     window.localStorage.setItem(UI_STATE_KEY, JSON.stringify({
       activeTab,
       habitsManageOpen, habitAddLabel, habitAddCategory,
-      calendarManageOpen,
+      calendarManageOpen, weeklyGoalAddOpen, monthlyGoalAddOpen,
       crmView, crmSearch, crmAddOpen, crmAddTitle, crmAddTimeframe, crmAddEntity, crmAddIsKey, crmSmartText,
       brainFilter, selectedEntityId, entityDetailOpen, entityNotes,
       journalViewMode, journalSearch, journalAddOpen, journalAddDate, journalAddRaw,
@@ -865,7 +873,7 @@ export default function App() {
   }, [
     activeTab,
     habitsManageOpen, habitAddLabel, habitAddCategory,
-    calendarManageOpen,
+    calendarManageOpen, weeklyGoalAddOpen, monthlyGoalAddOpen,
     crmView, crmSearch, crmAddOpen, crmAddTitle, crmAddTimeframe, crmAddEntity, crmAddIsKey, crmSmartText,
     brainFilter, selectedEntityId, entityDetailOpen, entityNotes,
     journalViewMode, journalSearch, journalAddOpen, journalAddDate, journalAddRaw,
@@ -1162,6 +1170,8 @@ export default function App() {
           weeklyGoals={weeklyGoals} monthlyGoals={monthlyGoals}
           weeklyInput={weeklyInput} setWeeklyInput={setWeeklyInput} addWeeklyGoal={addWeeklyGoal}
           monthlyInput={monthlyInput} setMonthlyInput={setMonthlyInput} addMonthlyGoal={addMonthlyGoal}
+          weeklyGoalAddOpen={weeklyGoalAddOpen} setWeeklyGoalAddOpen={setWeeklyGoalAddOpen}
+          monthlyGoalAddOpen={monthlyGoalAddOpen} setMonthlyGoalAddOpen={setMonthlyGoalAddOpen}
           deleteGoal={deleteGoal}
           editingGoalId={editingGoalId} editingGoalText={editingGoalText} setEditingGoalText={setEditingGoalText}
           startEditGoal={startEditGoal} saveEditGoal={saveEditGoal} cancelEditGoal={cancelEditGoal}
