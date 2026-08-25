@@ -838,6 +838,80 @@ exactly this reason).
   since the underlying data was always correct — worth investigating on its own if it
   keeps showing up, but out of scope for what was asked in either session.
 
+## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
+before it costs him a future fix-cycle, not a response to one specific report.
+Code-reviewed every backend route + the frontend handler layer, then live-tested
+every tab in the actual browser (not just curl). Four real, previously-unknown
+bugs found and fixed; two real gaps found and left for a decision rather than
+silently fixed, since both need either a migration or an explicit tradeoff call.
+
+**Fixed:**
+1. **Restoring an archived key task from CRM's Archive view made it show as
+   already checked-off on HOME, even though it had just been restored and not
+   redone.** Root cause: `pendingDoneIds` (a Set that briefly marks a task
+   "done" during its 260ms archive fade) was never cleaned up after the fade
+   completed -- the id just sat there forever. If that same task was later
+   restored (still `key: true`, back in `activeTasks`), `keyTasksDerived`
+   read the stale id and rendered it as done. Reproduced directly: checked
+   off "working out," restored it from Archive, watched it come back checked
+   on HOME. Fixed by clearing the id from `pendingDoneIds` inside
+   `restoreCrmTask` (`App.js`). Re-verified the exact same repro afterward --
+   correctly comes back unchecked.
+2. **JOURNAL's header said "{count} DAYS (LAST 30)" but `GET /api/journal`
+   has never filtered to 30 days or to one-per-day** -- it fetches every
+   entry that exists, full stop. The label was just wrong regardless of what
+   was in the data. Fixed to "{count} ENTRY/ENTRIES" (`JournalTab.js`),
+   accurate to what's actually shown.
+3. **`tasks.updated_at` was written via a raw `new Date()`**, which
+   JSON-serializes to a UTC ISO string -- the exact UTC-vs-local bug class
+   already fixed multiple times elsewhere in this app (habit_completions,
+   tasks.completed_at, nutrition_log), just on a column nothing currently
+   reads back, so it was silently wrong instead of visibly wrong. Fixed to
+   `localTimestampStr()` for consistency with `completed_at` on the same
+   table (`server.js`).
+4. **`POST /api/sleep/wake`'s same-day dedupe check used `.maybeSingle()`**,
+   which throws if more than one row ever matches -- meaning a single stray
+   duplicate row for one date (exactly the kind the same-day-duplicate bug
+   fixed earlier this session could produce) would have hard-failed every
+   future wake for that date instead of just picking one to update. Hardened
+   to `.order('id', {ascending:false}).limit(1)` (`server.js`), which can't
+   throw on multiple matches.
+
+**Found, not fixed -- flagged for a decision:**
+- **Entity notes (BRAIN's per-entity NOTES textarea) are never persisted
+  anywhere.** No `notes` column exists on `entities`, and `App.js`'s
+  `entityNotes` is a plain `useState({})` -- anything typed there is lost the
+  moment the page reloads, with zero visual indication it isn't saved. This
+  looks and behaves like a real persisted field until the exact moment it
+  silently isn't. Needs a decision (autosave on every keystroke vs. an
+  explicit save action) before adding the migration -- not fixed without
+  that call.
+- **DEPLOYMENT RISK, not yet a live bug:** every "local time" helper in this
+  app (`localDateStr`, `localTimestampStr`, `formatRange` in `lib/google.js`,
+  the hour-of-day math in `/api/analytics/habits`) reads the SERVER
+  process's OS timezone (`d.getHours()`, `d.getFullYear()`, etc.) -- there is
+  no hardcoded timezone anywhere. This works today only because the server
+  and Elo are both on the same Mac. The moment this deploys to a cloud VM
+  (Oracle/Railway, both default to UTC), every one of these would silently
+  start computing "today," "this hour," and every local-time comparison
+  using UTC instead of Elo's actual timezone -- reintroducing, at the
+  deployment layer, the exact bug class this project has already spent
+  multiple sessions fixing at the code layer. **Action needed at deploy
+  time, not a code change:** set `TZ=America/Los_Angeles` as an environment
+  variable on whatever host runs this (Oracle Cloud instance / Railway
+  service config), before the first real day of use post-deployment. Adding
+  this note here so it isn't forgotten when step 8 (deploy) resumes.
+
+**Also live-tested and confirmed correct, no bugs found:** AI ADD task
+parsing (correct entity classification, star pre-check), BRAIN entity
+briefing generation, JOURNAL mood/theme extraction + AI recap generation +
+INSIGHTS range picker, HOME's goal add/edit/delete, HOME's habit
+add/toggle/delete (daily score and streak both updated correctly), calendar
+week navigation, and the documented "new row doesn't render immediately"
+quirk (tried to reproduce directly both for CRM and JOURNAL adds -- did not
+reproduce either time; leaving the existing note as-is since it's evidently
+intermittent, not gone).
+
 ## Longer-term roadmap (agreed 2026-08-23 — supersedes any earlier ordering in this file)
 The long-term goal: this becomes a personal data layer, not just a tracker — habits,
 tasks, calendar, and journal data accumulating as real history that AI agents (in-app,

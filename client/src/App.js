@@ -465,6 +465,16 @@ export default function App() {
   };
   const restoreCrmTask = (id) => {
     setCrmTasks((ts) => ts.map((t) => (t.id === id ? { ...t, archived: false } : t)));
+    // A key task checked off from HOME leaves its id in pendingDoneIds (the
+    // brief "done" flag shown during the archive fade) -- if that task is
+    // later restored here, the stale id would make it render as already
+    // checked off on HOME even though it hasn't been redone. Clear it.
+    setPendingDoneIds((s) => {
+      if (!s.has(id)) return s;
+      const next = new Set(s);
+      next.delete(id);
+      return next;
+    });
     apiSend('/api/tasks/' + id, 'PUT', { is_archived: false }).catch((e) => console.error(e));
   };
   const deleteCrmTask = (id) => {

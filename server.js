@@ -107,7 +107,14 @@ app.post('/api/tasks/parse', async (req, res) => {
 const missingTaskCompletedAtColumn = (error) => error && /completed_at/i.test(error.message || '');
 
 app.put('/api/tasks/:id', async (req, res) => {
-  const body = { ...req.body, updated_at: new Date() };
+  // tasks.updated_at is a plain TIMESTAMP (no timezone), same as completed_at
+  // below -- a raw `new Date()` here would get JSON-serialized to a UTC ISO
+  // string on the way out, storing UTC clock digits in a column meant to hold
+  // local wall-clock time (the same bug class already fixed multiple times
+  // elsewhere in this app). Nothing currently reads updated_at back, so this
+  // was silent, but localTimestampStr() keeps it consistent with completed_at
+  // on this same table and with every other local-time column in this app.
+  const body = { ...req.body, updated_at: localTimestampStr() };
   // archiving = completed, restoring = not -- set/clear completed_at in step,
   // so task completion history needs zero frontend changes to start working
   if (Object.prototype.hasOwnProperty.call(req.body, 'is_archived')) {
@@ -450,16 +457,22 @@ app.post('/api/sleep/wake', async (req, res) => {
   // sleeps once a night, so waking up twice on the same date (a mis-click, or
   // deliberately redoing it) should overwrite that day's entry, not stack a
   // second one next to it. No unique constraint needed for this -- just check
-  // for an existing row on today's logged_date first.
-  const existingResult = await supabase.from('sleep_log').select('id').eq('logged_date', loggedDate).maybeSingle();
+  // for an existing row on today's logged_date first. Uses order+limit(1)
+  // rather than .maybeSingle() -- that throws if MORE than one row ever
+  // matches, which would otherwise turn one stray duplicate (e.g. leftover
+  // from before this de-dupe logic existed) into a hard failure on every
+  // future wake for that day instead of just picking one to update.
+  const existingResult = await supabase.from('sleep_log').select('id')
+    .eq('logged_date', loggedDate).order('id', { ascending: false }).limit(1);
   if (existingResult.error) {
     if (missingTable(existingResult.error, 'sleep_log')) return res.status(404).json({ error: 'sleep_log table does not exist yet' });
     console.error(existingResult.error);
     return res.status(400).json({ error: existingResult.error.message });
   }
+  const existing = existingResult.data[0];
 
-  const writeResult = existingResult.data
-    ? await supabase.from('sleep_log').update(row).eq('id', existingResult.data.id).select()
+  const writeResult = existing
+    ? await supabase.from('sleep_log').update(row).eq('id', existing.id).select()
     : await supabase.from('sleep_log').insert([row]).select();
   if (writeResult.error) {
     if (missingTable(writeResult.error, 'sleep_log')) return res.status(404).json({ error: 'sleep_log table does not exist yet' });
