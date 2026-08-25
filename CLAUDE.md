@@ -130,7 +130,8 @@ personal-os-dashboard/
 ├── lib/
 │   ├── anthropic.js          # Shared Claude API client + askClaude()/askClaudeStructured()
 │   ├── context.js            # Fetches + formats Supabase data (incl. Claude-ready text)
-│   └── dates.js              # Shared localDateStr()/localTimestampStr() (server-side)
+│   ├── dates.js              # Shared localDateStr()/localTimestampStr() (server-side)
+│   └── google.js             # Google OAuth2 client + Calendar API (Phase 6)
 ├── package.json
 └── client/src/
     ├── App.js                # ALL app state lives here, passed down as props to tabs
@@ -155,8 +156,18 @@ SUPABASE_URL=https://znblctbounitxetfcgns.supabase.co
 SUPABASE_ANON_KEY=<get from Supabase dashboard -> Project Settings -> API Keys>
 SUPABASE_SERVICE_ROLE_KEY=<same page, "service_role" key -- server-side only, never sent to the browser>
 ANTHROPIC_API_KEY=<from console.anthropic.com -> Settings -> API Keys -- server-side only>
+GOOGLE_CLIENT_ID=<from console.cloud.google.com -> APIs & Services -> Clients -- OAuth client ID>
+GOOGLE_CLIENT_SECRET=<same page, paired with the client ID -- server-side only>
 ```
 `ANTHROPIC_API_KEY` powers Phase 3a's Claude bridge (`lib/anthropic.js`) -- added and confirmed live 2026-08-23.
+`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` power Phase 6's Google Calendar OAuth (`lib/google.js`) --
+added 2026-08-25. Google Cloud project "Personal OS Dashboard", OAuth consent screen set to
+External + Testing (only the test-user email listed there can authorize -- fine for a
+single-user app, avoids Google's app-review process), scope
+`https://www.googleapis.com/auth/calendar.readonly` only (read-only -- nothing today needs
+write access), redirect URI `http://localhost:5050/api/integrations/google/callback`. Testing-mode
+apps get refresh tokens that Google may expire after ~7 days for sensitive scopes -- expect an
+occasional re-auth via the CONNECT GOOGLE CALENDAR button, not a bug.
 `SUPABASE_SERVICE_ROLE_KEY` is the roadmap's security-foundation step (see "Longer-term
 roadmap" below) — `supabaseClient.js` prefers it automatically the moment it's present
 and falls back to the anon key until then, so adding it is the entire fix, no other code
@@ -347,6 +358,33 @@ CREATE TABLE journal_entries (
 -- with no logged data -- not a generic-sounding paragraph. All seeded data
 -- (habit_completions, temporary tasks, journal entries) deleted afterward,
 -- confirmed via a fresh fetch that real data was untouched.
+
+-- PENDING MIGRATION (Phase 6 -- Google Calendar integration):
+--   CREATE TABLE integrations (
+--     id SERIAL PRIMARY KEY,
+--     provider TEXT NOT NULL UNIQUE,   -- 'google_calendar' now, 'telegram' reuses this later
+--     access_token TEXT,
+--     refresh_token TEXT,
+--     expires_at TIMESTAMP,
+--     config JSONB,                    -- provider-specific extras, unused so far
+--     created_at TIMESTAMP DEFAULT NOW(),
+--     updated_at TIMESTAMP DEFAULT NOW()
+--   );
+--   ALTER TABLE integrations ENABLE ROW LEVEL SECURITY;
+--   CREATE POLICY "Enable all for public" ON integrations FOR ALL USING (true) WITH CHECK (true);
+--
+-- One general-purpose table, not a google_calendar-specific one -- reused for
+-- Telegram in roadmap step 7 instead of a bespoke table per integration
+-- (`provider` distinguishes rows). `lib/google.js` reads/writes this via
+-- `getAuthorizedClient()`/`saveTokens()`; the googleapis client auto-refreshes
+-- an expired access_token using the refresh_token and fires a 'tokens' event
+-- with the new one, which is what triggers the re-save -- without that listener
+-- a refreshed token would only ever live in memory for one request.
+--
+-- Until this migration runs: POST /api/journal/.../callback still completes
+-- the OAuth exchange but redirects with ?google=no_table instead of saving
+-- anything; GET /api/calendar/events 404s cleanly instead of erroring. All
+-- confirmed via direct testing before this was written, not assumed.
 ```
 
 **Security — fix before deploying anywhere public:** every table currently has an
@@ -436,11 +474,26 @@ exactly this reason).
   briefing). Verified against real seeded data with a deliberate mood/habit pattern
   (see the RESOLVED note on `journal_entries` above) -- the insight correctly identified
   the correlation, quantified it, and added an unprompted causation-direction caveat.
-
-**Still fake, not wired to anything real:**
-- Calendar events on HOME — the day cells and week navigation are real, but the events
-  list itself is still the hardcoded `EVENTS_TODAY` demo data, only ever shown for the
-  actual current day.
+- Google Calendar on HOME (Phase 6) — code built and tested 2026-08-25, migration NOT
+  yet run (see the PENDING note on `integrations` above). `lib/google.js` wraps OAuth
+  (Authorization Code flow, `googleapis`) and a `listTodayEvents()` read against the
+  real Calendar API. `EVENTS_TODAY`'s hardcoded array is gone -- HOME's CALENDAR card
+  now calls `GET /api/calendar/events` (polled every 90s while the tab is open,
+  matching the roadmap's "1-2 minutes" decision) and shows a CONNECT GOOGLE CALENDAR
+  button when nothing's authorized yet. Read-only scope only
+  (`calendar.readonly`) -- nothing today needs the dashboard to create events.
+  Deliberately NOT syncing to a local table yet -- HOME only ever needs "today", so
+  there's nothing to gain from persisting a copy until something else (analytics,
+  history) actually needs calendar data at rest; the roadmap's syncToken-based
+  incremental sync becomes worth building at that point, not before.
+  **Verified so far:** the auth route redirects to a correctly-formed Google consent
+  URL with the right client ID/scope/redirect URI (checked directly, not just "it
+  compiles"); every route degrades gracefully pre-migration (`/callback` still
+  completes the token exchange but redirects with `?google=no_table` instead of
+  erroring, `/api/calendar/events` 404s cleanly). **Not yet verified:** an actual
+  completed OAuth round-trip and real events rendering on HOME -- that needs the
+  migration run and a real Google login, which only Elo can do (the login step isn't
+  something Claude can or should complete). Full end-to-end verification pending.
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still
@@ -553,16 +606,21 @@ from.
    unprompted, correct caveat about causation direction and untracked days — not a
    generic-sounding paragraph. All seeded data deleted afterward, confirmed via a fresh
    fetch that real data was untouched.
-6. **Google Calendar integration** — OAuth flow; tokens stored in one new general-purpose
-   `integrations` table (`provider`, `access_token`, `refresh_token`, `expires_at`,
-   `config` — reused for Telegram in step 7, instead of a bespoke table per integration).
-   Sync uses Google's `syncToken`-based incremental fetch (the real mechanism either
-   way), driven by **polling every 1–2 minutes** — decided against a tunnel (ngrok/
-   Cloudflare) for true push notifications for now. Google Calendar push requires a
-   public HTTPS endpoint verified by Google, which a tunnel can provide today but with
-   its own upkeep (channels expire every 7 days, need renewal) — revisit true push once
-   this app is deployed publicly anyway (see step 8), since a tunnel becomes unnecessary
-   at that point and push becomes the natural default, not an extra moving part.
+6. **Google Calendar integration** — code built and tested 2026-08-25, migration
+   pending, real OAuth round-trip not yet completed (see "What's real vs. still mock"
+   above for the full writeup). Tokens stored in a new general-purpose `integrations`
+   table (`provider`, `access_token`, `refresh_token`, `expires_at`, `config` — reused
+   for Telegram in step 7, instead of a bespoke table per integration). Scope narrowed
+   to `calendar.readonly` — the only thing built so far is *showing* real events on
+   HOME, not creating them. V1 skips the `syncToken`-based incremental sync originally
+   planned here: HOME only ever needs today's events, live-fetched and polled every 90s
+   (the "1–2 minutes" cadence from this line's original decision), so there's no local
+   table to keep in sync yet and nothing to gain from one until something else
+   (analytics, calendar history) actually needs it — revisit `syncToken` at that point,
+   it's still the right mechanism, just not needed yet. Push notifications were already
+   ruled out for the same reason as before: Google Calendar push needs a public HTTPS
+   endpoint, which localhost doesn't have — revisit once this app is deployed publicly
+   (step 8), same as originally planned.
 7. **Telegram bot** — thin client: calls the *same* Express API routes the React app
    calls, never talks to Supabase directly (so logic isn't duplicated across two
    clients); reuses step 4b's natural-language task parsing instead of reimplementing

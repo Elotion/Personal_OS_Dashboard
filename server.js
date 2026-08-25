@@ -6,6 +6,7 @@ const { z } = require('zod');
 const { askClaude, askClaudeStructured } = require('./lib/anthropic');
 const { getEntityContext, getJournalContext, getEntitiesWithDescriptions, getCorrelationData } = require('./lib/context');
 const { localDateStr, localTimestampStr } = require('./lib/dates');
+const googleCalendar = require('./lib/google');
 
 const app = express();
 app.use(cors());
@@ -514,6 +515,59 @@ app.post('/api/analytics/insight', async (req, res) => {
     }
     console.error(error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ---------------- GOOGLE CALENDAR ----------------
+// Phase 6: OAuth (Authorization Code flow) + a live "today's events" read,
+// no local sync/table yet -- HOME just needs today's real events in place of
+// EVENTS_TODAY, so there's nothing to gain from a synced local copy until
+// something else (analytics, history) actually needs calendar data at rest.
+const missingIntegrationsTable = (error) => error && /integrations/i.test(error.message || '');
+
+// Browser navigation, not a fetch -- this has to be a real page redirect to
+// Google's own consent screen, which a fetch() can't drive.
+app.get('/api/integrations/google/auth', (req, res) => {
+  res.redirect(googleCalendar.getAuthUrl());
+});
+
+app.get('/api/integrations/google/callback', async (req, res) => {
+  const { code, error: authError } = req.query;
+  if (authError) return res.redirect('http://localhost:3001/?google=denied');
+  try {
+    const client = googleCalendar.newOAuthClient();
+    const { tokens } = await client.getToken(code);
+    await googleCalendar.saveTokens(tokens);
+    res.redirect('http://localhost:3001/?google=connected');
+  } catch (err) {
+    if (missingIntegrationsTable(err)) {
+      return res.redirect('http://localhost:3001/?google=no_table');
+    }
+    console.error(err);
+    res.redirect('http://localhost:3001/?google=error');
+  }
+});
+
+app.get('/api/integrations/google/status', async (req, res) => {
+  try {
+    res.json({ connected: await googleCalendar.isConnected() });
+  } catch (err) {
+    console.error(err);
+    res.json({ connected: false });
+  }
+});
+
+app.get('/api/calendar/events', async (req, res) => {
+  try {
+    const events = await googleCalendar.listTodayEvents();
+    if (events === null) return res.json({ connected: false, events: [] });
+    res.json({ connected: true, events });
+  } catch (err) {
+    if (missingIntegrationsTable(err)) {
+      return res.status(404).json({ error: 'integrations table does not exist yet' });
+    }
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -246,6 +246,40 @@ export default function App() {
       .catch(() => { /* table not there yet -- keep the localStorage/default value */ });
   }, []);
 
+  // Phase 6: Google Calendar. Live-fetches today's events on demand rather
+  // than syncing to a local table -- HOME only ever shows "today", so there's
+  // nothing yet that needs calendar data at rest. Polls every 90s while the
+  // tab is open (the "1-2 minutes" cadence from the roadmap) instead of a
+  // true push subscription -- Google Calendar push needs a public HTTPS
+  // endpoint, which localhost doesn't have; revisit once this is deployed.
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [googleConnected, setGoogleConnected] = useState(false);
+
+  const refreshCalendarEvents = useCallback(() => {
+    apiGet('/api/calendar/events')
+      .then((result) => {
+        setGoogleConnected(result.connected);
+        setCalendarEvents(result.events || []);
+      })
+      .catch((e) => console.error('calendar events load failed', e));
+  }, []);
+
+  useEffect(() => {
+    // after the OAuth redirect back from the backend, ?google=connected|denied|error|no_table
+    // is on the URL -- just clean it off, the connected/disconnected state itself
+    // comes from the real status check below, not this query param
+    if (window.location.search.includes('google=')) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    refreshCalendarEvents();
+    const interval = setInterval(refreshCalendarEvents, 90000);
+    return () => clearInterval(interval);
+  }, [refreshCalendarEvents]);
+
+  const connectGoogleCalendar = () => {
+    window.location.href = '/api/integrations/google/auth';
+  };
+
   // CRM state
   const [crmView, setCrmView] = useState('PRIORITY');
   const [crmSearch, setCrmSearch] = useState('');
@@ -848,6 +882,8 @@ export default function App() {
       {activeTab === 'HOME' && (
         <HomeTab
           now={now} greeting={greeting} dayLabel={dayLabel}
+          calendarEvents={calendarEvents} googleConnected={googleConnected}
+          connectGoogleCalendar={connectGoogleCalendar}
           profile={profile}
           editingProfileField={editingProfileField} editingProfileText={editingProfileText}
           setEditingProfileText={setEditingProfileText}

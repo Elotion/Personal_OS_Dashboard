@@ -54,19 +54,6 @@ function buildNetWorthPaths() {
 }
 const NW = buildNetWorthPaths();
 
-const EVENTS_TODAY = [
-  { time: '08:45 – 09:00', label: 'Standup' },
-  { time: '09:30 – 10:30', label: 'CS 131 lecture' },
-  { time: '11:00 – 11:30', label: 'HEMS standup' },
-  { time: '11:30 – 12:30', label: 'Deep work block' },
-  { time: '13:00 – 13:30', label: 'Lunch with advisor' },
-  { time: '14:00 – 15:00', label: '1:1 with cofounder' },
-  { time: '15:30 – 16:00', label: 'Finance check-in' },
-  { time: '16:30 – 17:30', label: 'Gym — push day' },
-  { time: '18:00 – 18:30', label: 'Grocery run' },
-  { time: '19:00 – 20:00', label: 'Study group — CS 131' },
-];
-
 export default function HomeTab(props) {
   const {
     now, greeting, dayLabel,
@@ -87,6 +74,7 @@ export default function HomeTab(props) {
     monthlyInput, setMonthlyInput, addMonthlyGoal, deleteGoal,
     editingGoalId, editingGoalText, setEditingGoalText, startEditGoal, saveEditGoal, cancelEditGoal,
     foodLog, foodInput, setFoodInput, addFood, deleteFood,
+    calendarEvents, googleConnected, connectGoogleCalendar,
   } = props;
 
   const photoInputRef = useRef(null);
@@ -159,7 +147,7 @@ export default function HomeTab(props) {
        weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })).toUpperCase();
 
   let selectedEvents = (isCurrentWeek && selectedDayIdx === dow
-    ? EVENTS_TODAY
+    ? (calendarEvents.length > 0 ? calendarEvents : [{ time: '', label: 'No events today.' }])
     : [{ time: '', label: 'No events scheduled.' }]
   ).map((ev) => ({ ...ev, isEvent: true, isNow: false }));
 
@@ -588,8 +576,15 @@ export default function HomeTab(props) {
         <div style={css('border:1.5px solid oklch(0.86 0.17 195 / 0.45);border-radius:14px;padding:20px;background:oklch(0.16 0.075 238);box-shadow:0 0 14px oklch(0.8 0.19 200 / 0.06), 0 0 28px oklch(0.62 0.2 235 / 0.035), inset 1px 1px 0 oklch(0.95 0.02 200 / 0.07), inset -1px -1px 0 oklch(0.05 0 0 / 0.3);flex:1;display:flex;flex-direction:column;min-height:0;')}>
           <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-shrink:0;')}>
             <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>CALENDAR</div>
-            <div style={css('display:flex;align-items:center;gap:6px;')}>
-              <div
+            <div style={css('display:flex;align-items:center;gap:10px;')}>
+              {!googleConnected && (
+                <div
+                  onClick={connectGoogleCalendar}
+                  style={css('font-size:9.5px;font-weight:700;letter-spacing:0.04em;padding:5px 10px;border-radius:6px;background:oklch(0.58 0.18 204 / 0.15);border:1px solid oklch(0.58 0.18 204);color:oklch(0.75 0.15 210);cursor:pointer;white-space:nowrap;')}
+                >CONNECT GOOGLE CALENDAR</div>
+              )}
+              <div style={css('display:flex;align-items:center;gap:6px;')}>
+                <div
                 className="elo-row-hover"
                 onClick={() => setCalendarWeekOffset((o) => o - 1)}
                 style={css('width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;font-weight:700;color:oklch(0.6 0.025 228);')}
@@ -600,6 +595,7 @@ export default function HomeTab(props) {
                 onClick={() => setCalendarWeekOffset((o) => o + 1)}
                 style={css('width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;font-weight:700;color:oklch(0.6 0.025 228);')}
               >›</div>
+              </div>
             </div>
           </div>
           <div style={css('display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:16px;flex-shrink:0;')}>
