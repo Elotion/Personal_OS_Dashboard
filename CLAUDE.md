@@ -373,32 +373,58 @@ CREATE TABLE journal_entries (
 -- (habit_completions, temporary tasks, journal entries) deleted afterward,
 -- confirmed via a fresh fetch that real data was untouched.
 
--- PENDING MIGRATION (Phase 6 -- Google Calendar integration):
+-- RESOLVED 2026-08-25 (Phase 6 -- Google Calendar integration, later reused by
+-- Phase 7's Telegram bot): integrations table confirmed live and working --
+-- real OAuth round-trip completed, real tokens stored/refreshed, real
+-- Telegram chat_id stored in config. This note used to say PENDING; that had
+-- gone stale (the migration ran and both Phase 6 and 7 were verified done
+-- days ago) without this note being updated to match -- exactly the kind of
+-- drift the "keep this file current" process rule exists to catch.
 --   CREATE TABLE integrations (
 --     id SERIAL PRIMARY KEY,
---     provider TEXT NOT NULL UNIQUE,   -- 'google_calendar' now, 'telegram' reuses this later
+--     provider TEXT NOT NULL UNIQUE,   -- 'google_calendar', 'telegram' -- both live
 --     access_token TEXT,
 --     refresh_token TEXT,
 --     expires_at TIMESTAMP,
---     config JSONB,                    -- provider-specific extras, unused so far
+--     config JSONB,                    -- 'telegram' row stores {chat_id}; 'google_calendar'
+--                                       -- row stores {hidden_calendar_ids}
 --     created_at TIMESTAMP DEFAULT NOW(),
 --     updated_at TIMESTAMP DEFAULT NOW()
 --   );
 --   ALTER TABLE integrations ENABLE ROW LEVEL SECURITY;
 --   CREATE POLICY "Enable all for public" ON integrations FOR ALL USING (true) WITH CHECK (true);
 --
--- One general-purpose table, not a google_calendar-specific one -- reused for
--- Telegram in roadmap step 7 instead of a bespoke table per integration
--- (`provider` distinguishes rows). `lib/google.js` reads/writes this via
+-- One general-purpose table, not a google_calendar-specific one -- `provider`
+-- distinguishes rows, so Telegram (Phase 7) reused it instead of getting its
+-- own bespoke table. `lib/google.js` reads/writes this via
 -- `getAuthorizedClient()`/`saveTokens()`; the googleapis client auto-refreshes
 -- an expired access_token using the refresh_token and fires a 'tokens' event
 -- with the new one, which is what triggers the re-save -- without that listener
 -- a refreshed token would only ever live in memory for one request.
+
+-- PENDING MIGRATION (Phase 10 -- HEALTH tab, sleep tracking):
+--   CREATE TABLE sleep_log (
+--     id SERIAL PRIMARY KEY,
+--     hours NUMERIC(3,1) NOT NULL,
+--     quality INTEGER,          -- 1-5, optional -- matches journal's mood scale convention
+--     logged_date DATE NOT NULL,
+--     created_at TIMESTAMP DEFAULT NOW()
+--   );
+--   ALTER TABLE sleep_log ENABLE ROW LEVEL SECURITY;
+--   CREATE POLICY "Enable all for public" ON sleep_log FOR ALL USING (true) WITH CHECK (true);
 --
--- Until this migration runs: POST /api/journal/.../callback still completes
--- the OAuth exchange but redirects with ?google=no_table instead of saving
--- anything; GET /api/calendar/events 404s cleanly instead of erroring. All
--- confirmed via direct testing before this was written, not assumed.
+-- logged_date is a plain DATE, written as a 'YYYY-MM-DD' string from
+-- localDateStr() client- and server-side, same discipline as nutrition_log's
+-- logged_date and journal_entries.entry_date -- never routed through a bare
+-- `new Date()` on either end, to avoid reintroducing the UTC-vs-local bug
+-- class already fixed multiple times elsewhere in this app.
+--
+-- Until this migration runs: GET/POST/DELETE /api/sleep all 404 cleanly
+-- ("sleep_log table does not exist yet") instead of erroring -- confirmed
+-- directly via curl before this was written. HealthTab's SLEEP card shows
+-- "No sleep logged yet" and the add-sleep form silently no-ops on submit
+-- (same graceful-degradation pattern as habit_streak/profile before their
+-- migrations ran) rather than crashing.
 ```
 
 **Security — fix before deploying anywhere public:** every table currently has an
@@ -426,9 +452,19 @@ exactly this reason).
   that's no longer true).
 - Goals (weekly + monthly) — full CRUD: add, edit text in place, delete.
 - Nutrition log — add and delete; still no editing an existing entry's macros in place.
-- Journal entries — add, edit the raw text, delete. The "AI RECAP" text and its
-  GENERATE button are still a fake `setTimeout` placeholder, and regenerating it is
-  intentionally NOT persisted (would just be writing fake filler into the database).
+  Macros are real AI estimates (`POST /api/nutrition/estimate`, Claude via
+  `askClaudeStructured()`) as of the HEALTH tab work (2026-08-25) -- previously this
+  silently saved the same hardcoded `250/12/20/8` for every meal regardless of what
+  was typed, which is what this line used to (incorrectly) not mention. See the
+  HEALTH tab entry further down for the full writeup.
+- Journal entries — add, edit the raw text, delete. **Correction:** this line used to
+  say the "AI RECAP" GENERATE button was still a fake `setTimeout` placeholder --
+  that became stale the moment Phase 3a shipped (2026-08-23) and was never fixed here
+  until now, exactly the kind of drift the "keep this file current" process rule
+  exists to catch. It's real: GENERATE calls `POST /api/journal/:id/summary` (Claude,
+  via `lib/anthropic.js`) and persists the result to `journal_entries.recap`. See the
+  Phase 3a writeup further down for the full detail, including a real bug found and
+  fixed during that work.
 - Operator card (HOME, top-left) — name/tagline/focus editable in place (same
   click-pencil pattern as goals/habits), photo click opens the native file picker
   and displays what's chosen. All of it persists across a refresh today, but via
@@ -635,6 +671,51 @@ exactly this reason).
   a follow-on but deliberately deferred for now -- Elo asked to hold off
   rather than add a new external API (OpenAI) and credential at this point;
   revisit whenever that's actually wanted, nothing else depends on it.
+- HEALTH tab (Phase 10) — backend done and tested, frontend built and verified live
+  in the browser, 2026-08-25. Scope came directly from Elo: sleep tracking, real AI
+  calorie/macro estimation on the existing HOME nutrition log (previously fake, see
+  the correction on the Nutrition log line above), and a HEALTH-tab dashboard
+  (sleep trend, calorie trend, HEALTH-entity habit completion, day-by-day table)
+  with an on-demand AI insight generator, reusing the exact `getCorrelationData`-style
+  shared-context pattern from Phase 5 (`getHealthContext(days)` in `lib/context.js`,
+  feeds both `GET /api/health/data` and `POST /api/health/insight` so they can't
+  drift apart). New `POST /api/nutrition/estimate` route (Claude via
+  `askClaudeStructured()`, same Zod-schema pattern as CRM task parsing and journal
+  mood extraction) replaces the old hardcoded macros in `App.js`'s `addFood()` --
+  every meal now gets a real per-food estimate instead of the same fake numbers.
+  `sleep_log` table is a new PENDING migration (see schema section above) -- until
+  it's run, sleep logging degrades gracefully (404s cleanly, form no-ops, SLEEP card
+  shows "No sleep logged yet") rather than erroring, same tolerance pattern already
+  used for `habit_streak`/`profile` before their migrations ran; confirmed directly
+  via curl and in the browser, not assumed.
+  **Two real timezone bugs found and fixed in the existing nutrition routes while
+  building this** (the same UTC-vs-local bug class already hit and fixed at least
+  three times before elsewhere in this app): `GET /api/nutrition`'s "today" was
+  computed via `new Date().toISOString().slice(0,10)` (UTC, drifts a day off part of
+  the evening in a negative-UTC-offset timezone); `POST /api/nutrition` never sent
+  `logged_date` at all, silently relying on the database's `DEFAULT CURRENT_DATE`,
+  which evaluates in the database server's own timezone, not the user's. Both fixed
+  using `localDateStr(new Date())` explicitly, matching this project's established
+  convention -- neither bug was reported by Elo, both were caught by re-reading the
+  existing routes while wiring in the new sleep/estimate code, before they caused a
+  visible symptom.
+  **Verified, not just "it compiles":** curl-tested `POST /api/nutrition/estimate`
+  against real food descriptions before wiring it into the UI (returned sensible,
+  distinct numbers per food, not a repeated fake constant); curl-tested
+  `GET /api/sleep`/`POST /api/sleep` 404ing cleanly pre-migration; curl-tested
+  `GET /api/health/data` returning correct real nutrition numbers merged with
+  correctly-null sleep data and the correct HEALTH habit count (4). Then a full
+  browser pass: logged a real meal ("grilled chicken breast with rice") through
+  HOME's existing nutrition input and watched the real AI estimate (480 kcal / 45g
+  protein / 50g carbs / 10g fat) render, distinct from the old constant; opened
+  HEALTH and confirmed the sparkline/day-by-day picked up that same real entry;
+  submitted the sleep form and confirmed it degraded gracefully (cleared, no crash)
+  given the pending migration; hit GENERATE on the health insight and got back a
+  genuinely data-aware response -- correctly said there was no real pattern yet
+  given only 2 days of (test) calorie data and zero sleep data, and correctly
+  recommended more consistent tracking rather than inventing a pattern. Test
+  nutrition entry deleted afterward, confirmed via a fresh `GET /api/nutrition`
+  that real data was left untouched (empty, as it should be pre-this-session).
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still
@@ -804,11 +885,18 @@ from.
    frontend (loaded correctly in-browser, real data rendering) and the API from the
    same port -- proving the deployment architecture works before spending a single
    Railway build minute on it.
-   **Still needed:** a GitHub remote (this repo has never been pushed anywhere --
-   Railway deploys from a connected repo), a Railway account (account creation isn't
-   something Claude does), environment variables set in Railway's dashboard (not a
-   committed `.env`), and updating Google Cloud Console's OAuth redirect URI once the
-   real production URL is known.
+   **Update 2026-08-25:** the GitHub remote is now set up (`github.com/Elotion/
+   Personal_OS_Dashboard`, SSH key auth, "Push to GitHub after committing" is now a
+   standing process rule above) -- Railway can deploy from it once hosting actually
+   starts. Elo is separately in the middle of creating an Oracle Cloud account (an
+   always-free-tier VM, an alternative to Railway being considered) -- that signup
+   was still in progress and deliberately paused mid-flight so work could move on to
+   the next roadmap phase (this was Elo's explicit call: "let's put deployment to the
+   last step ... let's focus on the next phase right now"), not abandoned. Whichever
+   host is used, **still needed:** the actual hosting account finished/chosen,
+   environment variables set in that host's dashboard (not a committed `.env`), and
+   updating Google Cloud Console's OAuth redirect URI once the real production URL is
+   known.
 9. **Finance** (last, deliberately — most complex, most sensitive data) — live data from
    multiple financial/investment accounts, feeding both the existing (currently
    hardcoded) Finance Pulse widget on HOME and a full Finance tab that doesn't exist yet.
@@ -820,8 +908,13 @@ from.
    Finance Pulse numbers are annoying before the real integration lands, a cheap
    manual-entry stopgap (same spirit as how `profile`/`habit_streak` started as
    localStorage stopgaps) is a reasonable aside, not a sequencing change.
-10. Build out the HEALTH tab (currently a "coming soon" placeholder) — not yet
-    sequenced; revisit once the above is solid.
+10. ~~Build out the HEALTH tab~~ — done and tested 2026-08-25 (see "What's real vs.
+    still mock" above for the full writeup). Done out of its original sequencing
+    (before Finance/deployment) at Elo's explicit request, while the Oracle Cloud
+    account for step 8 was mid-signup. Sleep tracking + real AI calorie/macro
+    estimation + a HEALTH-tab dashboard (sleep/calorie trend, HEALTH-entity habit
+    completion, day-by-day table, on-demand AI insight) — the `sleep_log` table is
+    the one remaining manual migration (see PENDING MIGRATION note above).
 
 **Cross-cutting note for every step above:** manual DDL is a recurring cost, not a
 one-time one — Claude cannot run schema changes with the credentials this project uses

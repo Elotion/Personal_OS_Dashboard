@@ -73,7 +73,7 @@ export default function HomeTab(props) {
     weeklyInput, setWeeklyInput, addWeeklyGoal,
     monthlyInput, setMonthlyInput, addMonthlyGoal, deleteGoal,
     editingGoalId, editingGoalText, setEditingGoalText, startEditGoal, saveEditGoal, cancelEditGoal,
-    foodLog, foodInput, setFoodInput, addFood, deleteFood,
+    foodLog, foodInput, setFoodInput, addFood, deleteFood, foodEstimating,
     calendarEvents, googleConnected, connectGoogleCalendar,
     dashboardCalendars, calendarManageOpen, toggleCalendarManage, toggleCalendarVisibility,
   } = props;
@@ -773,10 +773,11 @@ export default function HomeTab(props) {
               value={foodInput}
               onChange={(e) => setFoodInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') addFood(); }}
-              placeholder="Log a meal — e.g. chicken, rice"
+              placeholder={foodEstimating ? 'Estimating…' : 'Log a meal — e.g. chicken, rice'}
+              disabled={foodEstimating}
               style={css('flex:1;min-width:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.58 0.18 204);border-radius:7px;padding:8px 10px;color:oklch(0.92 0.015 228);font-size:12px;')}
             />
-            <div onClick={addFood} style={css('width:32px;height:32px;flex-shrink:0;border-radius:7px;background:oklch(0.58 0.18 204);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;box-shadow:' + GLOW_STRONG + ';')}>+</div>
+            <div onClick={addFood} style={css('width:32px;height:32px;flex-shrink:0;border-radius:7px;background:oklch(0.58 0.18 204);display:flex;align-items:center;justify-content:center;cursor:' + (foodEstimating ? 'default' : 'pointer') + ';font-size:14px;box-shadow:' + GLOW_STRONG + ';opacity:' + (foodEstimating ? '0.5' : '1') + ';')}>+</div>
           </div>
         </div>
       </div>

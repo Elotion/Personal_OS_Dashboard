@@ -4,7 +4,7 @@ const cors = require('cors');
 const supabase = require('./supabaseClient');
 const { z } = require('zod');
 const { askClaude, askClaudeStructured } = require('./lib/anthropic');
-const { getEntityContext, getJournalContext, getEntitiesWithDescriptions, getCorrelationData } = require('./lib/context');
+const { getEntityContext, getJournalContext, getEntitiesWithDescriptions, getCorrelationData, getHealthContext } = require('./lib/context');
 const { localDateStr, localTimestampStr } = require('./lib/dates');
 const googleCalendar = require('./lib/google');
 const telegramBot = require('./lib/telegram');
@@ -314,18 +314,86 @@ app.delete('/api/goals/:id', (req, res) => {
 });
 
 // ---------------- NUTRITION ----------------
+// GET's "today" was previously computed via `new Date().toISOString().slice(0,10)`
+// -- UTC, not local -- the same class of date-drift bug already fixed
+// elsewhere in this app for evening entries in a negative-UTC-offset zone.
+// POST previously didn't send logged_date at all, relying on the DB's
+// `DEFAULT CURRENT_DATE`, which evaluates in the *database server's*
+// timezone (typically UTC on a hosted Postgres), not Elo's -- same bug,
+// write side. Both now use localDateStr() explicitly.
 app.get('/api/nutrition', (req, res) => {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr(new Date());
   handle(res, supabase.from('nutrition_log').select('*').eq('logged_date', req.query.date || today));
 });
 
 app.post('/api/nutrition', (req, res) => {
-  const { label, kcal, protein, carbs, fat } = req.body;
-  handle(res, supabase.from('nutrition_log').insert([{ label, kcal, protein, carbs, fat }]).select());
+  const { label, kcal, protein, carbs, fat, logged_date } = req.body;
+  const row = { label, kcal, protein, carbs, fat, logged_date: logged_date || localDateStr(new Date()) };
+  handle(res, supabase.from('nutrition_log').insert([row]).select());
+});
+
+// Replaces what used to be a hardcoded placeholder -- every logged meal
+// got the exact same 250 kcal / 12g protein / 20g carbs / 8g fat regardless
+// of what was actually typed (confirmed directly, this was never real).
+// Assumes a typical single-serving portion when the description doesn't
+// specify one, rather than asking a clarifying question every time --
+// this is meant to be fast, low-friction logging, not precise nutrition
+// science, so a rough estimate beats adding a round-trip.
+app.post('/api/nutrition/estimate', async (req, res) => {
+  try {
+    const text = (req.body.text || '').trim();
+    if (!text) return res.status(400).json({ error: 'text is required' });
+    const MacroSchema = z.object({
+      kcal: z.number().int().describe('Estimated total calories for this food/meal'),
+      protein: z.number().int().describe('Estimated grams of protein'),
+      carbs: z.number().int().describe('Estimated grams of carbohydrates'),
+      fat: z.number().int().describe('Estimated grams of fat'),
+    });
+    const prompt =
+      'Estimate the nutrition for this food/meal, assuming a typical single-serving ' +
+      "portion if the description doesn't specify one. Give your best rough estimate " +
+      '-- this is for casual personal tracking, not precise nutrition science.\n\n' +
+      'Food: ' + text;
+    const estimate = await askClaudeStructured(prompt, MacroSchema);
+    if (!estimate) return res.status(502).json({ error: 'Could not estimate nutrition for that' });
+    res.json(estimate);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.delete('/api/nutrition/:id', (req, res) => {
   handle(res, supabase.from('nutrition_log').delete().eq('id', req.params.id));
+});
+
+// ---------------- SLEEP ----------------
+const missingSleepLogTable = (error) => error && /sleep_log/i.test(error.message || '');
+
+app.get('/api/sleep', async (req, res) => {
+  const result = await supabase.from('sleep_log').select('*').order('logged_date', { ascending: false }).limit(30);
+  if (result.error) {
+    if (missingSleepLogTable(result.error)) return res.status(404).json({ error: 'sleep_log table does not exist yet' });
+    console.error(result.error);
+    return res.status(400).json({ error: result.error.message });
+  }
+  res.json(result.data);
+});
+
+app.post('/api/sleep', async (req, res) => {
+  const { hours, quality, logged_date } = req.body;
+  const row = { hours, quality: quality ?? null, logged_date: logged_date || localDateStr(new Date()) };
+  const result = await supabase.from('sleep_log').insert([row]).select();
+  if (result.error) {
+    if (missingSleepLogTable(result.error)) return res.status(404).json({ error: 'sleep_log table does not exist yet' });
+    console.error(result.error);
+    return res.status(400).json({ error: result.error.message });
+  }
+  res.json(result.data);
+});
+
+app.delete('/api/sleep/:id', (req, res) => {
+  handle(res, supabase.from('sleep_log').delete().eq('id', req.params.id));
 });
 
 // ---------------- JOURNAL ----------------
@@ -516,6 +584,40 @@ app.post('/api/analytics/insight', async (req, res) => {
     }
     console.error(error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ---------------- HEALTH ----------------
+app.get('/api/health/data', async (req, res) => {
+  try {
+    const health = await getHealthContext(parseInt(req.query.days, 10) || 14);
+    res.json({ days: health.length, health });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/health/insight', async (req, res) => {
+  try {
+    const health = await getHealthContext(parseInt(req.query.days, 10) || 14);
+    const lines = health.map((d) =>
+      `${d.date}: sleep ${d.sleep_hours != null ? d.sleep_hours + 'h' : 'n/a'}` +
+      (d.sleep_quality != null ? ` (quality ${d.sleep_quality}/5)` : '') +
+      `, ${d.kcal} kcal, health habits ${d.health_habits_completed}/${d.health_habits_total}`
+    ).join('\n');
+    const prompt =
+      'Here is day-by-day health data from a personal dashboard: sleep hours and quality ' +
+      '(1-5, higher is better), calories logged, and completion of health-related habits.\n\n' +
+      lines + '\n\n' +
+      'Write 2-4 sentences pointing out any REAL pattern connecting these (for example ' +
+      'sleep vs habit completion, or nutrition vs sleep). If the data does not show a ' +
+      'clear pattern, say so plainly instead of inventing one -- do not force a conclusion.';
+    const insight = await askClaude(prompt, { maxTokens: 1024 });
+    res.json({ insight });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
 

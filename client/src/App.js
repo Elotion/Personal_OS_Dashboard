@@ -5,6 +5,7 @@ import HomeTab from './pages/HomeTab';
 import CrmTab from './pages/CrmTab';
 import BrainTab from './pages/BrainTab';
 import JournalTab from './pages/JournalTab';
+import HealthTab from './pages/HealthTab';
 import EntityPanel from './components/EntityPanel';
 
 // ---- talking to the real backend ----
@@ -109,6 +110,9 @@ function transformGoal(row) {
 }
 function transformNutrition(row) {
   return { id: row.id, label: row.label, kcal: row.kcal, protein: row.protein, carbs: row.carbs, fat: row.fat };
+}
+function transformSleep(row) {
+  return { id: row.id, hours: row.hours, quality: row.quality, date: row.logged_date };
 }
 function transformJournal(row) {
   return {
@@ -236,6 +240,10 @@ export default function App() {
     apiGet('/api/journal')
       .then((rows) => setJournalEntries(rows.map(transformJournal)))
       .catch((e) => console.error('journal load failed', e));
+
+    apiGet('/api/sleep')
+      .then((rows) => setSleepLog(rows.map(transformSleep)))
+      .catch(() => { /* sleep_log table not there yet -- HEALTH tab shows no sleep data */ });
 
     // streak starts from localStorage (instant, avoids a flash of "0"), then gets
     // corrected from Supabase once that responds -- Supabase wins when both exist,
@@ -377,6 +385,20 @@ export default function App() {
   const [journalInsightLoading, setJournalInsightLoading] = useState(false);
   const [journalInsightText, setJournalInsightText] = useState('');
   const [journalInsightGenerating, setJournalInsightGenerating] = useState(false);
+
+  // HEALTH state -- sleep log backed by the real API (404s gracefully pre-
+  // migration, same tolerance pattern as habit_streak/profile above). Health
+  // data (sleep+nutrition+HEALTH-habit trend) loads on demand when the tab is
+  // opened, same reasoning as JOURNAL's INSIGHTS view -- cheap/deterministic
+  // so it's fine to auto-load, the Claude insight paragraph stays button-gated.
+  const [sleepLog, setSleepLog] = useState([]);
+  const [sleepHoursInput, setSleepHoursInput] = useState('');
+  const [sleepQualityInput, setSleepQualityInput] = useState(0);
+  const [foodEstimating, setFoodEstimating] = useState(false);
+  const [healthData, setHealthData] = useState([]);
+  const [healthDataLoading, setHealthDataLoading] = useState(false);
+  const [healthInsightText, setHealthInsightText] = useState('');
+  const [healthInsightGenerating, setHealthInsightGenerating] = useState(false);
 
   const selectedEntityIdRef = useRef(selectedEntityId);
   selectedEntityIdRef.current = selectedEntityId;
@@ -639,18 +661,60 @@ export default function App() {
   };
 
   // ---- NUTRITION handlers (backed by the real API) ----
+  // Macros are AI-estimated from the freeform text (POST /api/nutrition/estimate,
+  // via Claude) before the entry is saved -- previously this silently saved the
+  // same hardcoded 250/12/20/8 for every meal regardless of what was typed.
   const addFood = () => {
     const text = foodInput.trim();
-    if (!text) return;
-    apiSend('/api/nutrition', 'POST', { label: text, kcal: 250, protein: 12, carbs: 20, fat: 8 })
-      .then((rows) => setFoodLog((f) => [...f, transformNutrition(rows[0])]))
-      .catch((e) => console.error(e));
+    if (!text || foodEstimating) return;
+    setFoodEstimating(true);
     setFoodInput('');
+    apiSend('/api/nutrition/estimate', 'POST', { text })
+      .then((macros) => apiSend('/api/nutrition', 'POST', { label: text, ...macros }))
+      .then((rows) => setFoodLog((f) => [...f, transformNutrition(rows[0])]))
+      .catch((e) => console.error(e))
+      .finally(() => setFoodEstimating(false));
   };
   const deleteFood = (id) => {
     setFoodLog((f) => f.filter((x) => x.id !== id));
     fetch('/api/nutrition/' + id, { method: 'DELETE' }).catch((e) => console.error(e));
   };
+
+  // ---- SLEEP handlers (backed by the real API) ----
+  const addSleep = () => {
+    const hours = parseFloat(sleepHoursInput);
+    if (!hours || hours <= 0) return;
+    const row = { hours, quality: sleepQualityInput || null, logged_date: localDateStr() };
+    apiSend('/api/sleep', 'POST', row)
+      .then((rows) => setSleepLog((s) => [transformSleep(rows[0]), ...s]))
+      .catch((e) => console.error(e));
+    setSleepHoursInput('');
+    setSleepQualityInput(0);
+  };
+  const deleteSleep = (id) => {
+    setSleepLog((s) => s.filter((x) => x.id !== id));
+    fetch('/api/sleep/' + id, { method: 'DELETE' }).catch((e) => console.error(e));
+  };
+
+  // ---- HEALTH tab handlers ----
+  const loadHealthData = () => {
+    setHealthDataLoading(true);
+    apiGet('/api/health/data?days=14')
+      .then((result) => setHealthData(result.health))
+      .catch((e) => console.error(e))
+      .finally(() => setHealthDataLoading(false));
+  };
+  const generateHealthInsight = () => {
+    setHealthInsightGenerating(true);
+    apiSend('/api/health/insight?days=14', 'POST', {})
+      .then((result) => setHealthInsightText(result.insight))
+      .catch((e) => console.error(e))
+      .finally(() => setHealthInsightGenerating(false));
+  };
+  useEffect(() => {
+    if (activeTab === 'HEALTH') loadHealthData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // ---- BRAIN handlers ----
   const openEntityDetail = (id) => {
@@ -973,7 +1037,7 @@ export default function App() {
           editingGoalId={editingGoalId} editingGoalText={editingGoalText} setEditingGoalText={setEditingGoalText}
           startEditGoal={startEditGoal} saveEditGoal={saveEditGoal} cancelEditGoal={cancelEditGoal}
           foodLog={foodLog} foodInput={foodInput} setFoodInput={setFoodInput} addFood={addFood}
-          deleteFood={deleteFood}
+          deleteFood={deleteFood} foodEstimating={foodEstimating}
         />
       )}
 
@@ -1012,7 +1076,18 @@ export default function App() {
         />
       )}
 
-      {!['HOME', 'CRM', 'BRAIN', 'JOURNAL'].includes(activeTab) && (
+      {activeTab === 'HEALTH' && (
+        <HealthTab
+          sleepLog={sleepLog} sleepHoursInput={sleepHoursInput} setSleepHoursInput={setSleepHoursInput}
+          sleepQualityInput={sleepQualityInput} setSleepQualityInput={setSleepQualityInput}
+          addSleep={addSleep} deleteSleep={deleteSleep}
+          healthData={healthData} healthDataLoading={healthDataLoading}
+          healthInsightText={healthInsightText} healthInsightGenerating={healthInsightGenerating}
+          generateHealthInsight={generateHealthInsight}
+        />
+      )}
+
+      {!['HOME', 'CRM', 'BRAIN', 'JOURNAL', 'HEALTH'].includes(activeTab) && (
         <div style={css('flex:1;display:flex;align-items:center;justify-content:center;color:oklch(0.5 0.025 228);font-size:13px;')}>
           This tab is coming soon.
         </div>
