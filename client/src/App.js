@@ -276,8 +276,15 @@ export default function App() {
     return () => clearInterval(interval);
   }, [refreshCalendarEvents]);
 
+  // Goes straight at the backend's own port, not through the dev-server proxy --
+  // CRA's proxy only reliably forwards fetch()/XHR requests; a real full-page
+  // navigation (Accept: text/html, which is what window.location.href sends)
+  // gets swallowed by webpack-dev-server's own SPA fallback instead, which just
+  // reloads the React app and never reaches Express. Confirmed directly: curling
+  // /api/integrations/google/auth through port 3001 with an html Accept header
+  // returns the React app's index.html (200), not the expected 302 redirect.
   const connectGoogleCalendar = () => {
-    window.location.href = '/api/integrations/google/auth';
+    window.location.href = 'http://localhost:5050/api/integrations/google/auth';
   };
 
   // CRM state

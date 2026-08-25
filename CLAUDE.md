@@ -486,14 +486,32 @@ exactly this reason).
   there's nothing to gain from persisting a copy until something else (analytics,
   history) actually needs calendar data at rest; the roadmap's syncToken-based
   incremental sync becomes worth building at that point, not before.
-  **Verified so far:** the auth route redirects to a correctly-formed Google consent
-  URL with the right client ID/scope/redirect URI (checked directly, not just "it
-  compiles"); every route degrades gracefully pre-migration (`/callback` still
-  completes the token exchange but redirects with `?google=no_table` instead of
-  erroring, `/api/calendar/events` 404s cleanly). **Not yet verified:** an actual
-  completed OAuth round-trip and real events rendering on HOME -- that needs the
-  migration run and a real Google login, which only Elo can do (the login step isn't
-  something Claude can or should complete). Full end-to-end verification pending.
+  **Real bug found and fixed during testing:** the CONNECT GOOGLE CALENDAR button
+  initially did nothing when clicked (silently -- no error, no console output) --
+  reported by Elo as "it just glitches a little bit and nothing happens." Root
+  cause: `connectGoogleCalendar()` navigated to the relative path
+  `/api/integrations/google/auth`, which CRA's dev-server proxy does NOT reliably
+  forward for a real full-page navigation the way it does for `fetch()` calls --
+  webpack-dev-server's own SPA fallback intercepts requests whose `Accept` header
+  signals a browser page load (`text/html`, which is what `window.location.href`
+  sends but `fetch()` doesn't) and serves `index.html` instead of proxying to
+  Express, before the request ever reaches port 5050. Confirmed directly: curling
+  that path through port 3001 with an html `Accept` header returned a 200 with the
+  React app's `index.html`, not the expected 302. Every other `/api/*` call in this
+  app is a `fetch()`, which is why this hadn't surfaced before -- this was the
+  first real full-page browser navigation the app has needed to make. Fixed by
+  pointing `connectGoogleCalendar()` at the backend's own port directly
+  (`http://localhost:5050/api/integrations/google/auth`), bypassing the dev-server
+  proxy entirely for this one navigation. Re-verified after the fix: clicking the
+  button now lands on a real `accounts.google.com` sign-in page, confirmed by tab
+  title/origin, not a bounce back to the dashboard.
+  **Verified so far:** the above navigation fix; the auth route redirects to a
+  correctly-formed Google consent URL with the right client ID/scope/redirect URI;
+  the migration is confirmed live (`GET /api/calendar/events` now returns
+  `{connected:false,events:[]}`, not a 404). **Not yet verified:** an actual
+  completed OAuth round-trip and real events rendering on HOME -- that needs Elo's
+  own Google login to finish, which isn't something Claude can or should complete.
+  Full end-to-end verification pending.
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still
