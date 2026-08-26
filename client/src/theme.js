@@ -31,43 +31,43 @@ export const GLOW_STRONG =
 // pills, individual task/habit rows -- those keep their own inline styles),
 // per Elo's explicit request.
 //
-// The border ring/outer glow is NOT part of this inline string -- pseudo-
-// elements (::before/::after) can't be expressed through this codebase's
-// inline `css()` helper, only through a real class. That class is
-// `CARD_CLASS` (defined here, implemented in index.css as `.elo-panel-glow`)
-// -- every CARD consumer must add `className={CARD_CLASS}` alongside this
-// style string for the border ring to actually render.
-//
-// The interior fill IS part of this inline string. First attempt
-// (2026-08-25) fit a gradient directly to median-row-brightness pixel
-// samples from the reference image, fading to transparent by ~50% height --
-// but Elo looked at the two side by side and called it out immediately:
-// "the blue color is very different... it's not really glowing blue, it's
-// just plain blue, and it's too much shade all the way down to the center
-// of the box, which is not what I want." Two real, separate problems with
-// that first attempt, diagnosed by comparing a live screenshot against the
-// reference crops directly:
-//   1. Reach: fading to transparent at 50% is genuinely where the
-//      reference's brightness curve flattens out, but the visual EFFECT of
-//      a normal alpha-blended overlay stays perceptible at much lower
-//      alphas than the raw brightness numbers suggested -- so matching the
-//      measured curve exactly still read as "shade reaching too far down."
-//      Tightened to fully transparent by ~22% instead of ~50%.
-//   2. Quality: plain alpha-blending a color onto a dark background just
-//      produces a darker, desaturated version of that color -- it reads as
-//      tinted paint, not light. A real glow needs to look additive/
-//      luminous. Fixed with `background-blend-mode: screen` on this layer,
-//      which composites it against the base color the way overlapping
-//      light (not overlapping paint) behaves -- same peak color reads
-//      noticeably more vibrant/"lit" at the same alpha.
-// Border ring is unaffected by this -- that's still the pixel-measured
-// `.elo-panel-glow::before`/`::after` treatment in index.css.
+// ARCHITECTURAL REWRITE (2026-08-25), root cause finally identified. Every
+// prior pass (percentage-based interior gradients, screen blend mode, tighter
+// vs. looser fade points) was still fundamentally the wrong shape of effect:
+// a gradient FILL whose depth is a percentage of the box's own height is
+// mathematically guaranteed to look deeper on a tall box (CALENDAR, HABITS)
+// than a short one (OPERATOR) even with identical color stops, because "20%
+// of 700px" and "20% of 150px" are different numbers of pixels. Elo named
+// this precisely: "the glow shade are not supposed to be different or
+// proportional to the size of the boxes." The reference isn't a shading
+// effect at all -- it's an edge-lighting effect: a dark panel with an
+// illuminated TOP RIM and a shallow bloom immediately below it, both a
+// FIXED PIXEL depth regardless of the panel's height. Rebuilt as three
+// independent layers instead of one gradient trying to do everything:
+//   A. BASE BORDER -- a plain, uniform, subtle 1px border (this string).
+//      No gradient, no directionality -- the top/side/bottom brightness
+//      difference comes entirely from layers B and C stacking ON TOP of
+//      this at the top edge only, not from this border itself varying.
+//   B. TOP RIM -- a bright, thin (1px) horizontal line exactly at the top
+//      edge (`.elo-panel-glow::before` in index.css), gradiented
+//      left-to-right (brighter center, dimmer at the rounded corners) with
+//      a small box-shadow bloom immediately around it.
+//   C. TOP BLOOM -- a soft glow extending exactly 28px down from the top
+//      edge (`.elo-panel-glow::after`), using gradient stops in PX, not %
+//      -- e.g. `rgba(...) 8px, rgba(...) 18px, transparent 28px` -- which
+//      is the actual mechanism that makes this height-independent. A
+//      600px-tall card and a 150px-tall card both get exactly a 28px glow,
+//      not a proportional one.
+// CARD_CLASS (`elo-panel-glow`, defined here) carries layers B and C in
+// index.css, since pseudo-elements can't be expressed through this
+// codebase's inline `css()` helper -- every CARD consumer must pair
+// `className={CARD_CLASS}` with this style string. Interior background
+// stays a single flat dark color -- the "almost entirely dark" panel
+// interior Elo asked for -- with no vertical gradient of any kind on it;
+// all the glow lives in the fixed-depth pseudo-element layers instead.
 export const CARD_CLASS = 'elo-panel-glow';
 
 export const CARD =
-  'position:relative;background:' +
-  'linear-gradient(to bottom, rgba(90,195,255,0.85) 0%, rgba(40,150,210,0.3) 3%, ' +
-  'rgba(15,80,130,0.08) 7%, rgba(0,0,0,0) 13%), ' +
-  'oklch(0.145 0.055 240);' +
-  'background-blend-mode:screen,normal;' +
-  'border:1px solid transparent;border-radius:14px;';
+  'position:relative;background:oklch(0.145 0.055 240);' +
+  'border:1px solid rgba(20,125,185,0.42);border-radius:14px;' +
+  'box-shadow:inset 0 1px 0 rgba(110,210,255,0.10);';

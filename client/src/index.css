@@ -70,69 +70,72 @@ input:focus, textarea:focus, select:focus {
   filter: brightness(1.18);
 }
 
-/* Shared "major box" gradient-border glow (2026-08-25). Elo supplied a
-   reference technique (mask-composite gradient border via ::before, a
-   top-focused glow via ::after) plus his own hand-typed rgba color guess --
-   but he'd generated the reference LOOK with an image model, then wrote the
-   CSS afterward as his best visual approximation, not an extraction from
-   real code. So instead of trusting the hand-typed values, the actual PNG
-   he saved (`~/Downloads/Elo's Personal OS Dashboard/86dc8d40-....png`) was
-   sampled pixel-by-pixel with Pillow at the OPERATOR and HABITS box
-   borders, and the real numbers turned out meaningfully different from both
-   his guess and this file's prior version:
-     - top edge, center:    peak ~rgb(80,186,238)  (bright cyan)
-     - sides, mid-height:   ~rgb(1,17,40)           (nearly invisible --
-       far dimmer than either the top OR the bottom)
-     - bottom edge, center: ~rgb(2,90,145)          (moderate -- roughly
-       HALF the top's brightness, not the near-zero "0.08 opacity" his
-       hand-typed reference assumed)
-   In other words the real pattern isn't a monotonic top-to-bottom fade --
-   it's bright top and moderate bottom EDGES with the vertical SIDES being
-   the darkest part, like a frame with lit horizontal rails. The gradient
-   below is a direct fit to those three measured points (a linear gradient
-   carrying the vertical top/dim-middle/bottom curve, layered under a
-   smaller radial highlight that reproduces the top edge being brightest at
-   center and slightly dimmer at the corners, also confirmed by sampling).
-   ::before paints this over the whole box, then a content-box mask is
-   XOR'd/excluded from it, leaving only a 1px ring of it as the actual
-   border -- both pseudo-elements are pointer-events:none (never block
-   clicks) and border-radius:inherit (follow CARD's own radius, unlike
-   border-image which ignores border-radius entirely). Requires the host
-   element to have position:relative, which CARD already sets. If this ever
-   needs re-tuning against a new reference image, re-run the same sampling
-   approach (Pillow, scan a vertical/horizontal strip through a box's
-   border) rather than eyeballing it -- it caught real, non-obvious
-   differences from what eyeballing the same image had produced. */
+/* Shared "major box" edge-lighting effect (2026-08-25, architectural
+   rewrite). Every earlier pass here -- the mask-composite gradient border,
+   the percentage-based interior glow, screen blend mode -- was still
+   fundamentally a SHADING approach: some gradient whose stops are
+   percentages of the element's own height. That's the root bug Elo
+   identified: "the glow shade are not supposed to be different or
+   proportional to the size of the boxes." A percentage-based gradient is
+   mathematically guaranteed to look deeper on a tall box than a short one
+   at identical settings, because "X% of 700px" != "X% of 150px" in pixels.
+   The reference isn't shading -- it's edge lighting: a dark panel with an
+   illuminated top RIM and a shallow BLOOM immediately below it, both a
+   FIXED pixel depth no matter how tall the panel is. Rebuilt as two
+   pseudo-element layers, both using absolute px values, zero percentages:
+     ::before = the RIM -- a bright 1px line sitting exactly on the top
+       edge, gradiented left-to-right (dim at the rounded corners, bright
+       at center) with a small box-shadow bloom hugging it. This is what
+       makes the top edge read as "lit" while the plain `border` on the
+       panel itself (see CARD in theme.js) stays one flat, uniform, subtle
+       color all the way around -- the rim is an extra layer ON TOP of
+       that base border at the top only, not a variation of the border
+       itself.
+     ::after = the BLOOM -- a soft vertical falloff extending exactly 28px
+       down from the top edge, using gradient stops in `px` (`0px, 8px,
+       18px, 24px, 28px`), NOT percentages. This is the actual mechanism
+       that makes the glow height-independent: a 700px-tall CALENDAR card
+       and a 150px-tall OPERATOR card both get exactly a 28px bloom, full
+       stop -- change this number to retune depth globally, but never
+       switch it back to a percentage-based stop.
+   Both layers are pointer-events:none (never block clicks) and inset from
+   the sides slightly so they don't visually poke out past the panel's own
+   rounded corners. Requires the host element to have position:relative,
+   which CARD already sets. */
 .elo-panel-glow::before {
   content: "";
   position: absolute;
-  inset: 0;
-  padding: 1px;
-  border-radius: inherit;
-  background:
-    radial-gradient(ellipse 85% 45% at 50% 0%, rgba(140, 220, 255, 0.4), transparent 65%),
-    linear-gradient(180deg,
-      rgba(80, 186, 238, 0.95) 0%,
-      rgba(45, 120, 180, 0.55) 8%,
-      rgba(14, 48, 82, 0.14) 42%,
-      rgba(14, 48, 82, 0.14) 58%,
-      rgba(28, 108, 158, 0.5) 100%
-    );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
+  top: -1px;
+  left: 10px;
+  right: 10px;
+  height: 1px;
   pointer-events: none;
+  background: linear-gradient(90deg,
+    rgba(55, 180, 240, 0.35) 0%,
+    rgba(110, 220, 255, 0.95) 18%,
+    rgba(125, 225, 255, 1) 50%,
+    rgba(110, 220, 255, 0.95) 82%,
+    rgba(55, 180, 240, 0.35) 100%
+  );
+  box-shadow:
+    0 0 4px rgba(80, 200, 255, 0.65),
+    0 2px 8px rgba(40, 170, 240, 0.35);
 }
 
 .elo-panel-glow::after {
   content: "";
   position: absolute;
-  inset: -1px;
-  border-radius: inherit;
+  top: 0;
+  left: 1px;
+  right: 1px;
+  height: 28px;
+  border-radius: 14px 14px 0 0;
   pointer-events: none;
-  box-shadow:
-    0 -1px 8px rgba(70, 190, 255, 0.18),
-    0 1px 5px rgba(40, 130, 190, 0.10),
-    inset 0 1px 0 rgba(140, 220, 255, 0.25),
-    inset 0 -1px 0 rgba(30, 110, 160, 0.15);
+  background: linear-gradient(180deg,
+    rgba(55, 175, 235, 0.13) 0px,
+    rgba(35, 145, 210, 0.08) 8px,
+    rgba(20, 105, 175, 0.035) 18px,
+    rgba(10, 70, 130, 0.015) 24px,
+    transparent 28px
+  );
 }

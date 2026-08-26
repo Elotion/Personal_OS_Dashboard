@@ -1274,6 +1274,47 @@ exactly this reason).
   correct) kept the fix targeted at the two things that actually were wrong.
   Verified live at 3x zoom (close, matches the reference's tight top-only flash)
   and at normal scale across HOME and BRAIN (no longer reads as a flat blue wash).
+- **Fourth same-day follow-up, and the one that actually fixed the root cause: the
+  whole approach was architecturally wrong, not just mistuned.** Even after the
+  reach/blend-mode fix above, Elo caught the real underlying bug and named it
+  precisely: "the glow shade are not supposed to be different or proportional to
+  the size of the boxes." Every version up to this point -- the mask-composite
+  border, the interior gradient, all of it -- used gradient stops as PERCENTAGES
+  of the element's own height. That's mathematically guaranteed to make a tall box
+  (CALENDAR, HABITS, JOURNAL's day-by-day list, HEALTH's day-by-day list -- all
+  several hundred px tall) show a deeper, more spread-out glow than a short one
+  (OPERATOR, ~150-200px) at identical color stops, since "20% of 700px" and "20%
+  of 150px" are different pixel counts. This was never going to look right no
+  matter how the color stops were tuned -- the shape of the effect itself was
+  wrong. Elo supplied a fully worked reference implementation making the fix
+  concrete: the reference isn't a shading effect at all, it's edge lighting -- a
+  dark panel with an illuminated top rim and a shallow bloom immediately below it,
+  both a FIXED pixel depth regardless of panel height.
+  Rebuilt `CARD`/`CARD_CLASS` (`theme.js`, `index.css`) from scratch around this,
+  as three independent layers instead of one gradient trying to do everything:
+  (A) **base border** -- `CARD`'s own inline `border` is now a plain, uniform,
+  subtle `rgba` color with zero directionality (no more mask-composite gradient
+  border at all -- that whole technique is gone); (B) **top rim** --
+  `.elo-panel-glow::before`, a bright 1px horizontal line sitting exactly on the
+  top edge with a small box-shadow bloom, gradiented left-to-right so it's dimmer
+  at the rounded corners; (C) **top bloom** -- `.elo-panel-glow::after`, a soft
+  vertical falloff extending exactly `28px` down from the top edge using gradient
+  stops in **`px`, not `%`** (`0px, 8px, 18px, 24px, 28px`) -- this is the actual
+  mechanism that makes it height-independent. The panel interior itself is back to
+  a single flat color with no vertical gradient of any kind; all the glow lives in
+  these two fixed-depth pseudo-element layers.
+  **Verified this was actually fixed, not just re-described:** queried every
+  `.elo-panel-glow` element live via `getBoundingClientRect()` and
+  `getComputedStyle(el, '::after').height` across HOME, and confirmed panel
+  heights ranged from 154px to 419px (a ~2.7x spread) while every single one's
+  `::after` bloom measured exactly `28px` -- not approximately, exactly, since
+  it's a fixed value rather than a computed percentage. Also checked visually
+  across every tab, including three of the tallest boxes in the whole app
+  (JOURNAL's and HEALTH's day-by-day lists, both 350px+) -- all show the same
+  thin rim + shallow bloom as the short OPERATOR card, no visible scaling.
+  **If this ever needs retuning:** change the `28px` value (and the matching px
+  stops inside it) in `.elo-panel-glow::after` directly -- never convert those
+  stops back to percentages, that's the exact regression this pass fixed.
 
 ## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
 before it costs him a future fix-cycle, not a response to one specific report.
