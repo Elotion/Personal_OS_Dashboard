@@ -952,6 +952,21 @@ app.put('/api/calendar/calendars', async (req, res) => {
 
 // Production only -- in local dev, CRA's own dev server (port 3001) serves
 // the frontend and proxies /api/* back here instead. In production there's
+// TEMPORARY (Stage 1 of the Telegram agent build, 2026-08-26): lets the new
+// multi-turn tool-use loop in lib/agent.js be curl-iterated on directly,
+// without a Telegram round-trip per tweak. Removed/gated once Stage 2's real
+// write tools + confirm flow are wired up and verified through the bot.
+app.post('/api/_dev/agent-test', async (req, res) => {
+  try {
+    const { runAgentTurn } = require('./lib/agent');
+    const result = await runAgentTurn((req.body && req.body.text) || '');
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // no separate frontend server: this Express process serves the already-built
 // React app directly, so the whole thing is one deployment, one origin, no
 // CORS to worry about. Registered after every /api/* route above so those

@@ -119,6 +119,128 @@ file) -- resolved by widening the viewport height instead of scrolling, and cros
 checked against `get_page_text` and direct `getBoundingClientRect()` calls the
 whole time, so this was a tooling artifact, not a real layout bug.
 
+## Telegram bot → real tool-calling agent (2026-08-26, Stages 1-2 done; Stage 3 voice not started)
+Elo felt the bot was "nowhere near enough" -- it could only parse freeform text into a
+task (review-then-create) plus two fixed commands (`/today`, `/insight`). He wants it
+to reach every part of the dashboard from his phone: toggle habits, log food, check his
+calendar/tasks, get flexible cross-domain insights (not just a fixed 14-day window),
+trigger the sleep bed/wake flow, and (a later stage) send voice notes. Full plan lives
+in `/Users/elotion/.claude/plans/read-claude-md-first-for-lovely-book.md` if the exact
+reasoning behind any of this needs revisiting.
+
+Two things Elo confirmed explicitly before this was built: (1) voice transcription
+needs a new external dependency (OpenAI's Whisper API, a new `OPENAI_API_KEY`) -- he'd
+deferred this once before specifically to avoid adding a new API, asked again directly
+he said yes; (2) "confirm everything" -- interpreted as every tool call that *changes*
+data gets a Confirm/Cancel card first, pure questions answer immediately (confirming a
+question before it's allowed to be answered would be bad UX and isn't really what
+"confirm everything" was asking for -- flagged to Elo as the one place this build made
+a judgment call he didn't spell out byte-for-byte).
+
+**Architecture: this is genuinely new to the codebase -- real Claude tool-use, not
+another single-shot `askClaude()`/`askClaudeStructured()` call.** Two new files:
+- `lib/tools.js` -- the single source of truth for every tool the agent can call:
+  `TOOL_DEFINITIONS` (15 tools as JSON-schema, passed straight to
+  `client.messages.create({tools})`), `READ_TOOLS`/`WRITE_TOOLS` (two `Set`s deciding
+  auto-execute vs. stop-and-confirm), `EXECUTORS` (each a `fetch` against the SAME
+  Express API the React dashboard calls -- never Supabase directly, same "one place
+  logic lives" rule the bot has followed since Phase 7), `PREVIEW_RESOLVERS` (currently
+  just `log_food` -- runs the real macro-estimate call once, before the confirm card is
+  built, so what Elo confirms is exactly what gets saved a moment later, no drift), and
+  `SUMMARIZE` (a deterministic one-line description per write tool for the confirm
+  card -- not left to Claude's own prose, so a multi-action card has a consistent
+  format every time).
+- `lib/agent.js` -- the actual loop. `runAgentTurn(userText)` calls
+  `client.messages.create` with `tools: TOOL_DEFINITIONS`, capped at 5 turns: no
+  `tool_use` blocks → return the text answer directly; every `tool_use` this turn is a
+  read tool → execute them all, feed `tool_result`s back, take another turn (this is
+  what lets "mark working out done" resolve which habit that actually is before
+  proposing anything); the moment ANY `tool_use` is a write tool → stop and return
+  every proposed write action from that turn (Claude can and does return several write
+  tool_use blocks in one turn when a message needs several actions -- "I worked out and
+  ate chicken and rice" resolves to two separate proposals in ONE confirm card, verified
+  live). `executeActions(actions)` is deliberately simple and separate -- by the time
+  Elo taps Confirm every id was already resolved, so confirming does NOT call Claude
+  again, it just runs each write executor in sequence, catching failures per-action so
+  one bad action in a batch doesn't sink the rest.
+  Model config deliberately deviates from `lib/anthropic.js`'s `effort: 'low'` default
+  -- this loop does real multi-step planning and can emit several tool calls per turn,
+  which benefits from more reasoning room: `effort: 'medium'`.
+
+**The 15 tools** (exact route mapping in the plan file, not repeated here) -- 8 read
+(`get_habits`, `get_tasks`, `get_calendar_events`, `get_entities`, `get_health_summary`
+which merges `GET /api/health/data` + `GET /api/health/goals`, `get_insight`,
+`get_correlation_data`, `get_sleep_status`) and 7 write (`toggle_habit`, `log_food`,
+`create_task`, `update_task`, `start_sleep`, `end_sleep`, `create_journal_entry`).
+"Mark a task done" is `update_task` with `is_archived: true` (matching the route's real
+semantics, `completed_at` auto-stamps) -- the system prompt states this explicitly
+since there's no separate "is_done" field for Claude to reach for.
+
+**`lib/telegram.js` changes:** `/start`, `/today`, `/insight` untouched (fast,
+deterministic, no reason to route them through the new agent). `pendingTasks: Map<
+chatId, task>` generalized to `pendingActions: Map<chatId, ToolUse[]>`. New shared
+`handleUserMessage(ctx, text)` (used by the text handler now, and will be reused by a
+Stage-3 voice handler) runs the agent turn, resolves preview steps, and shows one
+Confirm/Cancel card listing every proposed action. Confirm executes all of them and
+reports per-action success/failure; Cancel just clears the pending entry -- same shape
+as the old single-task flow, generalized to a list.
+
+**Real bug found and fixed during testing:** the first version of `toggle_habit` only
+sent `{completed_date}` in the `PUT /api/habits/:id` body. `GET /api/habits` afterward
+showed `completed_date` set correctly but `completed_today` still `false` -- the
+dashboard's own `toggleHabit` (`App.js`) sends BOTH fields together
+(`{completed_today, completed_date}`), and the route has no logic inferring one from
+the other. Caught by actually checking `GET /api/habits` after a test toggle instead of
+trusting the PUT response looked fine. Fixed to send both fields; re-verified with a
+fresh toggle → correct `completed_today: true` → reverted, confirmed clean.
+
+**Verified via real round-trips (all test data cleaned up afterward), everything I
+could test without Elo's own Telegram device:**
+- Every read tool individually, and multi-tool-in-one-turn (a combined "tasks + habits"
+  question correctly called both `get_tasks` and `get_habits` in parallel).
+- Every write tool's full execute path (`toggle_habit`, `log_food`, `create_task`,
+  `update_task`, `create_journal_entry`) -- proposed, previewed where relevant, executed,
+  checked against a fresh `GET`, cleaned up. `create_journal_entry` correctly triggers
+  mood/theme extraction as part of the same action (verified real mood/themes on the
+  test row before deleting it).
+- Multi-action detection: "I worked out and ate grilled chicken with rice" correctly
+  proposed both `toggle_habit` and `log_food` from one message.
+- A genuinely open-ended nutrition question ("what have I eaten today and how does that
+  compare to my goals") produced a real, useful comparison against Elo's actual macro
+  goals -- not a generic-sounding answer.
+- Loop safety: an unresolvable request ("toggle the habit called xyzzy123") correctly
+  read the real habit list, found no match, and asked a clarifying question instead of
+  guessing or looping to the 5-turn cap.
+- No regressions: `/api/tasks`, `/api/habits` still 200; `lib/telegram.js`/`lib/agent.js`/
+  `lib/tools.js` all load cleanly.
+
+**Not yet verified, needs Elo:** the actual Confirm/Cancel button tap inside Telegram's
+own UI -- everything above was exercised by calling `runAgentTurn`/`executeActions`
+directly or through a temporary dev-only route (`POST /api/_dev/agent-test`, `server.js`
+-- added purely so the loop could be curl-iterated on without a Telegram round-trip per
+tweak). This still needs a real pass from Elo's actual chat before it's called done.
+
+**Temporary, needs removing/gating before any public deployment:** `POST
+/api/_dev/agent-test` has no auth and isn't meant to survive past this build's testing
+-- same localhost-only reasoning as the RLS note in the schema section above, just for
+a route instead of a table. Remove once Elo's live Telegram pass confirms Stage 2 is
+solid.
+
+**Not started: Stage 3 (voice).** Needs Elo to add `OPENAI_API_KEY` to `.env` himself
+first (get it from platform.openai.com's API keys page) -- `lib/transcribe.js`
+(`transcribeVoice(oggFileUrl)`, raw `fetch`/`FormData` against
+`https://api.openai.com/v1/audio/transcriptions`, deliberately not the `openai` npm
+package for one call's worth of surface area) and a `bot.on('voice', ...)` handler
+feeding the transcript through the already-proven `handleUserMessage` pipeline are
+designed (see the plan file) but not written yet.
+
+**Known limitations carried forward, not introduced by this build:** `pendingActions`
+is still keyed by `chatId` only (same as the old `pendingTasks`) -- a second message
+before confirming the first silently replaces the pending card. `toggle_habit`
+addresses whole habits via the same route the dashboard's own non-subtask checkbox
+uses -- habits with `habit_subtasks` aren't individually addressable via chat in v1,
+same limitation the direct-PUT route already had.
+
 ## Latest HEALTH tab follow-up (2026-08-26) -- TODAY section hierarchy
 Same-day follow-up to the HEALTH refinement above. Elo: drop TODAY's caption text
 ("Calories/protein/sugar vs. your personal goal · carbs/fat/fiber vs. general
@@ -2188,6 +2310,16 @@ from.
    mumbled/mispronounced speech) discussed and deliberately deferred -- Elo
    asked to hold off on adding a new external API/credential for now; revisit
    whenever that's actually wanted.
+   **Update 2026-08-26: rebuilt from a thin client into a real tool-calling
+   agent** (Elo: the original bot was "nowhere near enough") -- Stages 1-2
+   done and verified via direct execution, Stage 3 (voice, using the
+   previously-deferred Whisper API -- Elo confirmed he now wants it) not yet
+   built. Full writeup under "Telegram bot → real tool-calling agent" above;
+   the one-line version is the bot now understands 15 different actions
+   across every tab (not just task creation), can act on several in one
+   message, and always shows a Confirm/Cancel card before changing anything.
+   Still needs a real pass from Elo's own Telegram chat before this line can
+   say "confirmed by Elo" the way it did for the original build.
 8. **Deploy publicly** — in progress, code-side prep done and tested 2026-08-25, actual
    hosting not yet live. **Architecture decided: one deployment (Railway), not the
    originally-sketched Vercel+Railway split.** Reason: the Telegram bot's long-polling
