@@ -216,15 +216,20 @@ could test without Elo's own Telegram device:**
 
 **Not yet verified, needs Elo:** the actual Confirm/Cancel button tap inside Telegram's
 own UI -- everything above was exercised by calling `runAgentTurn`/`executeActions`
-directly or through a temporary dev-only route (`POST /api/_dev/agent-test`, `server.js`
--- added purely so the loop could be curl-iterated on without a Telegram round-trip per
-tweak). This still needs a real pass from Elo's actual chat before it's called done.
+directly, or through a temporary dev-only route (`POST /api/_dev/agent-test`,
+`server.js` -- added purely so the loop could be curl-iterated on without a Telegram
+round-trip per tweak). This still needs a real pass from Elo's actual chat before it's
+called done.
 
-**Temporary, needs removing/gating before any public deployment:** `POST
-/api/_dev/agent-test` has no auth and isn't meant to survive past this build's testing
--- same localhost-only reasoning as the RLS note in the schema section above, just for
-a route instead of a table. Remove once Elo's live Telegram pass confirms Stage 2 is
-solid.
+**RESOLVED 2026-08-26: `/api/_dev/agent-test` removed.** The moment Elo's Railway
+deployment went live, this had no auth and was reachable by anyone with the URL --
+confirmed directly with a real `curl` against the production domain before removing
+it (200 OK, no auth required, would have let anyone burn Elo's Anthropic quota for
+free). Caught and fixed in the same session the app went public, not left as a
+known gap. Local verification of new agent tools going forward uses the same
+direct `runAgentTurn`/`executeActions` calls this route was already thin wrapper
+around (see the tool-by-tool verification notes above for examples), so nothing
+about the testing workflow is lost by removing it.
 
 **Stage 3 (voice) code written 2026-08-26, not yet live -- waiting on Elo's
 `OPENAI_API_KEY`.** `lib/transcribe.js` (`transcribeVoice(oggFileUrl)`, raw `fetch`/
