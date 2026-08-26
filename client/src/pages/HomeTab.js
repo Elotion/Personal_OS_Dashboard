@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { css } from '../css';
-import { CARD, GLOW_MED, GLOW_STRONG, GOLD, ENTITY_OPTIONS } from '../theme';
+import { CARD, CARD_CLASS, GLOW_MED, GLOW_STRONG, GOLD, ENTITY_OPTIONS } from '../theme';
 
 // resizes/compresses a picked image client-side before it goes anywhere, so the
 // stored data URL stays reasonably small
@@ -304,7 +304,7 @@ export default function HomeTab(props) {
       <div style={css(COL)}>
 
         {/* OPERATOR */}
-        <div style={css(CARD + 'padding:18px;')}>
+        <div className={CARD_CLASS} style={css(CARD + 'padding:18px;')}>
           <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;')}>
             <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>OPERATOR</div>
             <div style={css('display:flex;align-items:center;gap:5px;')}>
@@ -406,7 +406,7 @@ export default function HomeTab(props) {
         </div>
 
         {/* FINANCE PULSE */}
-        <div style={css('position:relative;' + CARD + 'padding:18px;')}>
+        <div className={CARD_CLASS} style={css(CARD + 'padding:18px;')}>
           <div
             className="elo-hover-pop"
             onClick={() => setFinanceHidden(!financeHidden)}
@@ -443,7 +443,7 @@ export default function HomeTab(props) {
         </div>
 
         {/* TODAY · KEY TASKS */}
-        <div style={css(CARD + 'padding:18px;flex:1;')}>
+        <div className={CARD_CLASS} style={css(CARD + 'padding:18px;flex:1;')}>
           <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;')}>
             <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>TODAY · KEY TASKS</div>
             <div style={css('display:flex;align-items:center;gap:6px;')}>
@@ -496,7 +496,7 @@ export default function HomeTab(props) {
       <div style={css('flex:3 1 0;padding:28px 12px;display:flex;flex-direction:column;gap:28px;min-width:400px;min-height:780px;')}>
 
         {/* GREETING + CAPTURE */}
-        <div style={css(CARD + 'padding:20px;')}>
+        <div className={CARD_CLASS} style={css(CARD + 'padding:20px;')}>
           <div style={css('font-size:11px;letter-spacing:0.08em;color:oklch(0.55 0.025 228);margin-bottom:6px;')}>{dayLabel}</div>
           <div style={css('font-size:30px;font-weight:700;letter-spacing:-0.01em;margin-bottom:18px;')}>
             {greeting}, <span style={css('font-style:italic;font-weight:500;')}>Elo</span>.
@@ -518,7 +518,7 @@ export default function HomeTab(props) {
         </div>
 
         {/* HABITS */}
-        <div style={css(CARD + 'padding:16px 18px;')}>
+        <div className={CARD_CLASS} style={css(CARD + 'padding:16px 18px;')}>
           <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;')}>
             <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>HABITS</div>
             <div style={css('display:flex;align-items:center;gap:10px;')}>
@@ -746,7 +746,7 @@ export default function HomeTab(props) {
         {/* CALENDAR -- uses the shared CARD silhouette now instead of its
             own near-duplicate custom style, so it stays in sync with the
             rest of the "major boxes" automatically. */}
-        <div style={css(CARD + 'padding:20px;flex:1;display:flex;flex-direction:column;min-height:0;')}>
+        <div className={CARD_CLASS} style={css(CARD + 'padding:20px;flex:1;display:flex;flex-direction:column;min-height:0;')}>
           <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-shrink:0;')}>
             <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>CALENDAR</div>
             <div style={css('display:flex;align-items:center;gap:10px;')}>
@@ -949,7 +949,7 @@ export default function HomeTab(props) {
         </div>
 
         {/* NUTRITION */}
-        <div style={css(CARD + 'padding:18px;')}>
+        <div className={CARD_CLASS} style={css(CARD + 'padding:18px;')}>
           <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;')}>
             <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>NUTRITION</div>
             <div style={css('font-size:9px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>TODAY</div>
@@ -995,7 +995,7 @@ export default function HomeTab(props) {
 
         {/* SLEEP -- bed/wake click flow lives here, not on HEALTH (which is
             pure visual data + insight generation, no logging actions) */}
-        <div style={css(CARD + 'padding:18px;')}>
+        <div className={CARD_CLASS} style={css(CARD + 'padding:18px;')}>
           <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;')}>
             <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>SLEEP</div>
             <div style={css('font-size:9px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>RECENT</div>

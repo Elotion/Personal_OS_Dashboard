@@ -1,6 +1,6 @@
 import React from 'react';
 import { css } from '../css';
-import { CARD, GLOW_STRONG } from '../theme';
+import { CARD, CARD_CLASS, GLOW_STRONG } from '../theme';
 
 const RANGE_OPTIONS = [7, 14, 30, 60, 90];
 
@@ -101,7 +101,7 @@ export default function HealthTab({
     <div className="elo-scroll" style={css('flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding-right:6px;')}>
 
       {/* AI INSIGHT */}
-      <div style={css(CARD + 'padding:16px;display:flex;flex-direction:column;gap:10px;')}>
+      <div className={CARD_CLASS} style={css(CARD + 'padding:16px;display:flex;flex-direction:column;gap:10px;')}>
         <div style={css('display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;')}>
           <div style={css('font-size:10px;font-weight:700;letter-spacing:0.08em;color:oklch(0.86 0.17 195);')}>⭐ AI INSIGHT</div>
           <div style={css('display:flex;align-items:center;gap:10px;')}>
@@ -119,7 +119,7 @@ export default function HealthTab({
 
       <div style={css('display:flex;gap:16px;flex-wrap:wrap;')}>
         {/* SLEEP */}
-        <div style={css(CARD + 'padding:18px;flex:1 1 320px;min-width:280px;')}>
+        <div className={CARD_CLASS} style={css(CARD + 'padding:18px;flex:1 1 320px;min-width:280px;')}>
           <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;')}>
             <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>SLEEP</div>
             <div style={css('font-size:9px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>{healthRangeDays}-DAY AVG</div>
@@ -135,7 +135,7 @@ export default function HealthTab({
         </div>
 
         {/* NUTRITION TREND */}
-        <div style={css(CARD + 'padding:18px;flex:1 1 320px;min-width:280px;')}>
+        <div className={CARD_CLASS} style={css(CARD + 'padding:18px;flex:1 1 320px;min-width:280px;')}>
           <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;')}>
             <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>CALORIES</div>
             <div style={css('font-size:9px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>{healthRangeDays}-DAY TREND</div>
@@ -171,7 +171,7 @@ export default function HealthTab({
       </div>
 
       {/* DAY BY DAY */}
-      <div style={css(CARD + 'padding:16px;')}>
+      <div className={CARD_CLASS} style={css(CARD + 'padding:16px;')}>
         <div style={css('font-size:10px;font-weight:700;letter-spacing:0.08em;color:oklch(0.55 0.025 228);margin-bottom:12px;')}>DAY BY DAY</div>
         {healthDataLoading ? (
           <div style={css('color:oklch(0.5 0.025 228);font-size:12.5px;padding:12px 0;')}>Loading…</div>

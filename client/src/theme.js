@@ -29,23 +29,26 @@ export const GLOW_STRONG =
 // groups, BRAIN's entity cards, JOURNAL's entries, HEALTH's panels, etc.
 // Deliberately NOT used by small interactive chrome (tab switchers, toggle
 // pills, individual task/habit rows -- those keep their own inline styles),
-// per Elo's explicit request. Rebuilt directly against a real screenshot of
-// the target UI (2026-08-25). Elo's own correction after the first
-// screenshot-matched attempt: the top-to-bottom fade he wants lives in the
-// SILHOUETTE -- the glowing outline/border itself -- not primarily in the
-// box's interior fill. So the interior gradient here is now just a subtle
-// assist (kept faint so the panel doesn't look flat), while the outer glow
-// hugging the border is the part that's deliberately asymmetric: bright and
-// tight right at the top edge, tapering to almost nothing by the bottom
-// edge -- built from two box-shadow layers (a small-blur, brighter one with
-// a slight negative y-offset concentrated above/at the top, and a
-// wider-blur, much lower-opacity one with a positive y-offset that reads as
-// falloff rather than a second glow source), plus a bright inset top edge
-// line vs. a dark inset bottom edge line reinforcing the same direction on
-// the border's own bevel. Corner radius stays rounded (14px) since
-// box-shadow (unlike border-image) follows border-radius correctly.
+// per Elo's explicit request.
+//
+// The border/glow itself (2026-08-25, final pass) is NOT part of this
+// inline string -- Elo supplied the exact CSS technique he wanted (a real
+// mask-composite gradient border plus a top-focused glow), and pseudo-
+// elements (::before/::after) can't be expressed through this codebase's
+// inline `css()` helper, only through a real class. That class is
+// `CARD_CLASS` (defined here, implemented in index.css as `.elo-panel-glow`)
+// -- every CARD consumer must add `className={CARD_CLASS}` alongside this
+// style string for the border/glow to actually render. This inline string
+// only carries what a plain inline style CAN express: the interior fill
+// (a faint top-lit gradient wash, left as-is per Elo's explicit "don't
+// alter the background, only the border/glow treatment"), a transparent
+// placeholder border (keeps the box-model identical to when a real 1px
+// border was set here, so nothing shifts by a pixel now that the visible
+// border moved to the pseudo-element), border-radius, and position:relative
+// (required so the pseudo-elements, which are position:absolute, anchor to
+// this box and not some further-out ancestor).
+export const CARD_CLASS = 'elo-panel-glow';
+
 export const CARD =
-  'background:linear-gradient(to bottom, oklch(0.19 0.06 236), oklch(0.145 0.055 240) 55%);' +
-  'border:1px solid oklch(0.55 0.14 231 / 0.9);border-radius:14px;box-shadow:' +
-  '0 -1px 9px oklch(0.62 0.15 231 / 0.45), 0 5px 16px oklch(0.55 0.14 231 / 0.07), ' +
-  'inset 0 1px 0 oklch(0.68 0.14 230 / 0.4), inset 0 -1px 0 oklch(0.03 0 0 / 0.5);';
+  'position:relative;background:linear-gradient(to bottom, oklch(0.19 0.06 236), oklch(0.145 0.055 240) 55%);' +
+  'border:1px solid transparent;border-radius:14px;';

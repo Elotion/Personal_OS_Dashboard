@@ -1,6 +1,6 @@
 import React from 'react';
 import { css } from '../css';
-import { CARD, GLOW_STRONG } from '../theme';
+import { CARD, CARD_CLASS, GLOW_STRONG } from '../theme';
 
 const MOOD_EMOJI = { 1: '😔', 2: '😕', 3: '😐', 4: '🙂', 5: '😄' };
 const RANGE_OPTIONS = [7, 14, 30, 60, 90];
@@ -33,7 +33,7 @@ function InsightsView({
 }) {
   return (
     <div className="elo-scroll" style={css('flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding-right:6px;')}>
-      <div style={css(CARD + 'padding:16px;display:flex;flex-direction:column;gap:10px;')}>
+      <div className={CARD_CLASS} style={css(CARD + 'padding:16px;display:flex;flex-direction:column;gap:10px;')}>
         <div style={css('display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;')}>
           <div style={css('font-size:10px;font-weight:700;letter-spacing:0.08em;color:oklch(0.86 0.17 195);')}>⭐ AI INSIGHT</div>
           <div style={css('display:flex;align-items:center;gap:10px;')}>
@@ -49,7 +49,7 @@ function InsightsView({
         </div>
       </div>
 
-      <div style={css(CARD + 'padding:16px;')}>
+      <div className={CARD_CLASS} style={css(CARD + 'padding:16px;')}>
         <div style={css('font-size:10px;font-weight:700;letter-spacing:0.08em;color:oklch(0.55 0.025 228);margin-bottom:12px;')}>DAY BY DAY</div>
         {journalInsightLoading ? (
           <div style={css('color:oklch(0.5 0.025 228);font-size:12.5px;padding:12px 0;')}>Loading…</div>
@@ -132,7 +132,7 @@ export default function JournalTab({
       )}
 
       {journalViewMode !== 'INSIGHTS' && journalAddOpen && (
-        <div style={css(CARD + 'padding:16px;display:flex;flex-direction:column;gap:10px;')}>
+        <div className={CARD_CLASS} style={css(CARD + 'padding:16px;display:flex;flex-direction:column;gap:10px;')}>
           <input
             type="date"
             value={journalAddDate}
@@ -172,7 +172,7 @@ export default function JournalTab({
       ) : filtered.length > 0 ? (
         <div className="elo-scroll" style={css('flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding-right:6px;')}>
           {filtered.map((entry) => (
-            <div key={entry.id} style={css(CARD + 'padding:20px;transition:box-shadow 0.2s ease;')}>
+            <div key={entry.id} className={CARD_CLASS} style={css(CARD + 'padding:20px;transition:box-shadow 0.2s ease;')}>
               <div style={css('display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;')}>
                 <div>
                   <div style={css('font-size:18px;font-weight:800;letter-spacing:0.02em;')}>{entry.day}</div>

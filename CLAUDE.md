@@ -1138,6 +1138,48 @@ exactly this reason).
   reference screenshot and Elo's verbal corrections, not a pixel sample -- flagged as
   something to iterate on further if it's still not close enough once Elo looks at it
   himself.
+- **`CARD`'s border/glow rebuilt a fourth and final time (2026-08-25), from a real CSS
+  technique Elo supplied himself** (not a verbal description this round -- he'd asked
+  an image model to generate the reference look, then extracted the actual CSS it was
+  visually aiming for and handed that over directly, plus an explicit instruction not
+  to touch background/layout/spacing, only the border/glow treatment). This is a
+  materially different technique from the box-shadow approximation the third pass
+  used: a genuine gradient-colored BORDER via the standard `mask-composite` trick
+  (paint a full gradient across the box, then XOR-exclude a content-box-sized mask
+  from it, leaving only a 1px ring of that gradient as the actual border), plus a
+  separate top-concentrated `box-shadow` glow layered on top. Elo's "advanced" variant
+  was used for the border gradient specifically -- a `radial-gradient(ellipse at 50%
+  0%, ...)` (brightest at top-center, fading toward the corners and much further by
+  the bottom) rather than a flat top-to-bottom `linear-gradient`, per his own stated
+  preference ("that's probably the version I'd use... gives the boxes that more
+  expensive-looking 'lit from above' silhouette").
+  **Real architectural constraint this ran into:** this app styles everything through
+  a `css()` helper that turns an inline CSS string into a React style object (see
+  `client/src/css.js`) -- there is no mechanism for inline styles to express
+  pseudo-elements (`::before`/`::after`), which this technique requires. Solution:
+  split `CARD` (`theme.js`) into two parts. The inline string keeps only what a plain
+  style CAN express -- the interior fill (untouched, per Elo's explicit instruction),
+  `border-radius`, `position:relative` (so the pseudo-elements anchor correctly), and
+  a `1px solid transparent` placeholder border (keeps the box model pixel-identical to
+  when a real border color lived here, so nothing shifts now that the visible border
+  moved elsewhere). A new export, `CARD_CLASS = 'elo-panel-glow'`, is a real CSS class
+  (implemented in `client/src/index.css`) carrying the actual `::before`/`::after`
+  rules -- every CARD consumer now needs BOTH `style={css(CARD + ...)}` AND
+  `className={CARD_CLASS}` (merged with `elo-entity-card` on BRAIN's cards, which
+  keeps its own separate hover rule). All eight call sites across `HomeTab.js`,
+  `CrmTab.js`, `BrainTab.js`, `JournalTab.js`, and `HealthTab.js` updated to add the
+  className alongside the existing style. `.elo-entity-card:hover` (BRAIN's cards,
+  the only CARD consumer that's actually clickable) simplified to a `translateY` lift
+  plus `filter:brightness(1.18)` -- brightening the whole card including its
+  pseudo-elements in one property, instead of trying to redefine the gradient colors
+  a second time for a hover state.
+  Verified live across every tab (HOME, CRM both views, BRAIN including hover state,
+  JOURNAL, HEALTH) -- consistent gradient-ring silhouette everywhere, no new console
+  errors (only the pre-existing, already-documented `GET /api/profile` 404). Exact
+  color stops are Elo's own supplied values, not re-derived -- if the look still needs
+  tuning, adjust the rgba stops directly in `.elo-panel-glow::before`/`::after` in
+  `index.css`, not the inline `CARD` string in `theme.js` (that string no longer
+  controls border/glow at all, only fill/radius/position).
 
 ## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
 before it costs him a future fix-cycle, not a response to one specific report.
