@@ -1044,6 +1044,41 @@ exactly this reason).
   A habit with no sub-tasks is completely unaffected. `expandedHabitId` (which single
   habit's checklist is open) is part of the same persisted UI-state blob as everything
   else on HOME.
+  **Same-day follow-up, two corrections from Elo after seeing it live:**
+  1. The checklist originally rendered below the ENTIRE 3-column grid, always at the
+     very bottom regardless of which row the clicked habit was in. Elo: "I want the
+     subtask to display as boxes in rows right underneath the main task instead
+     underneath all the tasks." Fixed by chunking `habits` into rows of 3 (matching
+     the grid's column count) and inserting the checklist as a `grid-column:1/-1`
+     item in DOM order right after the row containing the expanded habit -- CSS grid
+     honors DOM order for auto-placement, so a full-width item there pushes later
+     rows down instead of the checklist landing at the bottom. The tile-rendering
+     JSX was extracted into a `HabitTile` component specifically to make this
+     row-chunking loop legible. Also restyled sub-tasks as small bordered boxes in a
+     wrapped row (his own words: "use a smaller box to indicate it's a subtask"),
+     echoing the main tiles' own box language at a smaller scale instead of a plain
+     vertical list.
+  2. Sub-tasks can now be drag-reordered while editing a habit (mirrors the existing
+     top-level habit reorder exactly -- `draggingSubtaskId`/`reorderSubtasks` in
+     `App.js`, same splice-and-reindex-then-PUT-every-item approach as
+     `reorderHabits`). Since the per-habit sub-task list now lives nested inside the
+     already-`draggable` top-level habit row (for reordering habits themselves), each
+     sub-task's own drag handlers call `e.stopPropagation()` -- without it, dropping a
+     sub-task would also bubble up and fire the outer row's `onDrop`, calling
+     `reorderHabits` with a sub-task's numeric id misread as a habit id.
+     **Verification note:** HTML5 drag-and-drop could not be mechanically exercised
+     through this session's browser automation -- both simulated mouse-drag and
+     scripted `DragEvent`/`DataTransfer` dispatch failed to trigger the drop (a known,
+     general limitation of automating native HTML5 DnD, not specific to this app;
+     browsers restrict `DataTransfer` on non-trusted synthetic events). Verified
+     instead via direct API calls replicating the exact PUT sequence
+     `reorderSubtasks` would send for a real drag (splice a subtask out, reinsert it,
+     PUT sequential `sort_order` for every item) -- confirmed the resulting order was
+     exactly correct, and confirmed the checklist correctly renders in whatever order
+     `sort_order` holds. The event wiring itself mirrors the already-shipped,
+     already-working top-level habit drag pattern structurally. Flagged to Elo as a
+     real gap in verification (not claimed as fully tested) -- worth a real drag test
+     on his end before relying on it.
 
 ## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
 before it costs him a future fix-cycle, not a response to one specific report.

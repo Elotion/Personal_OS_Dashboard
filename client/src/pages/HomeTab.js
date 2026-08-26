@@ -67,34 +67,97 @@ function buildNetWorthPaths() {
 }
 const NW = buildNetWorthPaths();
 
-// Renders below the whole 3-column habit grid (not nested inside one grid
-// cell -- CSS grid can't cleanly expand a single cell downward without
-// breaking the row for its neighbors) when a habit with sub-tasks is
-// expanded. Habit only counts as done once every sub-task is checked --
-// Elo's own words: "it is only if you click all of the sub-tasks then you
-// complete that habit."
+// Renders right after the GRID ROW its habit belongs to (grid-column:1/-1,
+// placed in DOM order inside the same grid) -- not below the whole grid,
+// per Elo's correction: he wanted it directly under the row containing the
+// tile he clicked, not shoved to the very bottom under every other row.
+// Sub-tasks render as small boxes in a wrapped row (his own words: "display
+// as boxes in rows... use a smaller box to indicate it's a subtask"),
+// mirroring the main tiles' own box language at a smaller scale rather than
+// a plain vertical list. Habit only counts as done once every sub-task is
+// checked -- Elo's own words: "it is only if you click all of the
+// sub-tasks then you complete that habit."
+function HabitTile({ h, todayStr, expandedHabitId, toggleHabitExpand, toggleHabit, habitBurst, particles }) {
+  const hasSubtasks = h.subtasks.length > 0;
+  const subtasksDone = hasSubtasks ? h.subtasks.filter((s) => s.completedDate === todayStr).length : 0;
+  return (
+    <div
+      onClick={() => (hasSubtasks ? toggleHabitExpand(h.id) : toggleHabit(h.id))}
+      style={css(
+        'position:relative;overflow:visible;background:oklch(0.12 0.06 240);border-radius:9px;padding:9px 10px;cursor:pointer;border:1px solid ' +
+        (expandedHabitId === h.id ? GOLD : h.done ? 'oklch(0.86 0.17 195 / 0.4)' : 'oklch(0.58 0.18 204)') + ';opacity:' + (h.done ? '0.65' : '1') +
+        ';box-shadow:' +
+        (h.done
+          ? '0 0 14px oklch(0.8 0.19 200 / 0.06), 0 0 28px oklch(0.62 0.2 235 / 0.035)'
+          : '0 0 24px oklch(0.8 0.19 200 / 0.19), 0 0 48px oklch(0.62 0.2 235 / 0.11)') +
+        ', inset 1px 1px 0 oklch(0.95 0.02 200 / 0.07), inset -1px -1px 0 oklch(0.05 0 0 / 0.3);transition:border-color 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;'
+      )}
+    >
+      {h.done && (
+        <svg width="13" height="13" viewBox="0 0 24 24" style={css('position:absolute;top:7px;right:7px;filter:drop-shadow(0 0 4px oklch(0.86 0.17 195 / 0.55));')}>
+          <defs>
+            <linearGradient id={'fireGradMini' + h.id} x1="0" y1="1" x2="0" y2="0">
+              <stop offset="0%" stopColor="oklch(0.7 0.18 235)" />
+              <stop offset="100%" stopColor="oklch(0.92 0.1 198)" />
+            </linearGradient>
+          </defs>
+          <path d="M12 2c-1 2.5-3.5 4.5-3.5 8 0 2.5 2 4.5 4.5 4.5 1.6 0 2.4-1 2.4-2.2 0-1-.5-1.7-.9-2.4 1.8 1.1 3.5 3 3.5 5.6a5.5 5.5 0 0 1-11 0c0-3.4 1.9-5.3 3.4-7.4-.4 1.4.3 2.3 1.2 2.3.9 0 1.4-.7 1.4-1.6 0-1.4-1.2-2.6-1-6.8z" fill={'url(#fireGradMini' + h.id + ')'} />
+        </svg>
+      )}
+      <div style={css(
+        'width:17px;height:17px;border-radius:4px;border:1.5px solid ' +
+        (h.done ? 'oklch(0.86 0.17 195)' : 'oklch(0.4 0.025 228)') + ';background:' +
+        (h.done ? 'oklch(0.86 0.17 195 / 0.18)' : 'transparent') +
+        ';color:oklch(0.86 0.17 195);box-shadow:' +
+        (h.done
+          ? '0 0 14px oklch(0.8 0.19 200 / 0.06), 0 0 28px oklch(0.62 0.2 235 / 0.035)'
+          : '0 0 24px oklch(0.8 0.19 200 / 0.19), 0 0 48px oklch(0.62 0.2 235 / 0.11)') +
+        ';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;transition:box-shadow 0.3s ease;'
+      )}>{h.done ? '✓' : ''}</div>
+      <div style={css('font-size:11px;font-weight:600;margin-top:6px;')}>{h.label}</div>
+      <div style={css('font-size:9px;font-weight:600;letter-spacing:0.05em;color:oklch(0.55 0.025 228);margin-top:1px;')}>
+        {h.category}{hasSubtasks ? ' · ' + subtasksDone + '/' + h.subtasks.length : ''}
+      </div>
+      {habitBurst === h.id && particles.map((p) => <div key={p.idx} style={p.style} />)}
+    </div>
+  );
+}
+
+// Renders right after the GRID ROW its habit belongs to (grid-column:1/-1,
+// placed in DOM order inside the same grid) -- not below the whole grid,
+// per Elo's correction: he wanted it directly under the row containing the
+// tile he clicked, not shoved to the very bottom under every other row.
+// Sub-tasks render as small boxes in a wrapped row (his own words: "display
+// as boxes in rows... use a smaller box to indicate it's a subtask"),
+// mirroring the main tiles' own box language at a smaller scale rather than
+// a plain vertical list. Habit only counts as done once every sub-task is
+// checked -- Elo's own words: "it is only if you click all of the
+// sub-tasks then you complete that habit."
 function HabitSubtaskChecklist({ habit, todayStr, toggleSubtask }) {
   return (
-    <div style={css('margin-top:12px;padding-top:12px;border-top:1px solid oklch(0.48 0.14 210);')}>
-      <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.55 0.025 228);margin-bottom:8px;')}>
+    <div style={css('grid-column:1 / -1;padding:12px;border-radius:9px;background:oklch(0.12 0.06 240);border:1px solid oklch(0.4 0.08 220);')}>
+      <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.55 0.025 228);margin-bottom:10px;')}>
         {habit.label.toUpperCase()} · SUB-TASKS · ALL REQUIRED TO COMPLETE
       </div>
-      <div style={css('display:flex;flex-direction:column;gap:6px;')}>
+      <div style={css('display:flex;flex-wrap:wrap;gap:8px;')}>
         {habit.subtasks.map((s, i) => {
           const done = s.completedDate === todayStr;
           return (
             <div
               key={s.id}
               onClick={() => toggleSubtask(habit.id, s.id)}
-              style={css('display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;background:oklch(0.12 0.06 240);cursor:pointer;transition:opacity 0.2s ease;')}
+              style={css(
+                'display:flex;align-items:center;gap:7px;padding:8px 12px;border-radius:8px;background:oklch(0.16 0.075 238);cursor:pointer;transition:border-color 0.2s ease;border:1px solid ' +
+                (done ? GOLD.replace(')', ' / 0.4)') : 'oklch(0.4 0.08 220)') + ';'
+              )}
             >
               <div style={css(
                 'width:14px;height:14px;border-radius:4px;flex-shrink:0;border:1.5px solid ' +
                 (done ? GOLD : 'oklch(0.4 0.025 228)') + ';background:' + (done ? GOLD.replace(')', ' / 0.18)') : 'transparent') +
                 ';display:flex;align-items:center;justify-content:center;font-size:10px;color:' + GOLD + ';'
               )}>{done ? '✓' : ''}</div>
-              <div style={css('font-size:9px;color:oklch(0.5 0.025 228);flex-shrink:0;')}>{i + 1}.</div>
-              <div style={css('font-size:12px;flex:1;min-width:0;' + (done ? 'color:oklch(0.5 0.025 228);text-decoration:line-through;' : ''))}>{s.label}</div>
+              <span style={css('font-size:9px;color:oklch(0.5 0.025 228);')}>{i + 1}.</span>
+              <span style={css('font-size:12px;white-space:nowrap;' + (done ? 'color:oklch(0.5 0.025 228);text-decoration:line-through;' : ''))}>{s.label}</span>
             </div>
           );
         })}
@@ -113,6 +176,7 @@ export default function HomeTab(props) {
     captureText, setCaptureText, submitCapture,
     habits, toggleHabit, todayStr, habitBurst, streakCount, streakBurst,
     expandedHabitId, toggleHabitExpand, toggleSubtask, addSubtask, deleteSubtask,
+    draggingSubtaskId, setDraggingSubtaskId, reorderSubtasks,
     subtaskAddLabel, setSubtaskAddLabel,
     habitsManageOpen, toggleHabitsManage,
     habitAddLabel, setHabitAddLabel, habitAddCategory, setHabitAddCategory, addHabit, deleteHabit,
@@ -501,61 +565,35 @@ export default function HomeTab(props) {
           </div>
 
           <div style={css('display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;')}>
-            {habits.map((h) => {
-              const hasSubtasks = h.subtasks.length > 0;
-              const subtasksDone = hasSubtasks ? h.subtasks.filter((s) => s.completedDate === todayStr).length : 0;
-              return (
-              <div
-                key={h.id}
-                onClick={() => (hasSubtasks ? toggleHabitExpand(h.id) : toggleHabit(h.id))}
-                style={css(
-                  'position:relative;overflow:visible;background:oklch(0.12 0.06 240);border-radius:9px;padding:9px 10px;cursor:pointer;border:1px solid ' +
-                  (expandedHabitId === h.id ? GOLD : h.done ? 'oklch(0.86 0.17 195 / 0.4)' : 'oklch(0.58 0.18 204)') + ';opacity:' + (h.done ? '0.65' : '1') +
-                  ';box-shadow:' +
-                  (h.done
-                    ? '0 0 14px oklch(0.8 0.19 200 / 0.06), 0 0 28px oklch(0.62 0.2 235 / 0.035)'
-                    : '0 0 24px oklch(0.8 0.19 200 / 0.19), 0 0 48px oklch(0.62 0.2 235 / 0.11)') +
-                  ', inset 1px 1px 0 oklch(0.95 0.02 200 / 0.07), inset -1px -1px 0 oklch(0.05 0 0 / 0.3);transition:border-color 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;'
-                )}
-              >
-                {h.done && (
-                  <svg width="13" height="13" viewBox="0 0 24 24" style={css('position:absolute;top:7px;right:7px;filter:drop-shadow(0 0 4px oklch(0.86 0.17 195 / 0.55));')}>
-                    <defs>
-                      <linearGradient id={'fireGradMini' + h.id} x1="0" y1="1" x2="0" y2="0">
-                        <stop offset="0%" stopColor="oklch(0.7 0.18 235)" />
-                        <stop offset="100%" stopColor="oklch(0.92 0.1 198)" />
-                      </linearGradient>
-                    </defs>
-                    <path d="M12 2c-1 2.5-3.5 4.5-3.5 8 0 2.5 2 4.5 4.5 4.5 1.6 0 2.4-1 2.4-2.2 0-1-.5-1.7-.9-2.4 1.8 1.1 3.5 3 3.5 5.6a5.5 5.5 0 0 1-11 0c0-3.4 1.9-5.3 3.4-7.4-.4 1.4.3 2.3 1.2 2.3.9 0 1.4-.7 1.4-1.6 0-1.4-1.2-2.6-1-6.8z" fill={'url(#fireGradMini' + h.id + ')'} />
-                  </svg>
-                )}
-                <div style={css(
-                  'width:17px;height:17px;border-radius:4px;border:1.5px solid ' +
-                  (h.done ? 'oklch(0.86 0.17 195)' : 'oklch(0.4 0.025 228)') + ';background:' +
-                  (h.done ? 'oklch(0.86 0.17 195 / 0.18)' : 'transparent') +
-                  ';color:oklch(0.86 0.17 195);box-shadow:' +
-                  (h.done
-                    ? '0 0 14px oklch(0.8 0.19 200 / 0.06), 0 0 28px oklch(0.62 0.2 235 / 0.035)'
-                    : '0 0 24px oklch(0.8 0.19 200 / 0.19), 0 0 48px oklch(0.62 0.2 235 / 0.11)') +
-                  ';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;transition:box-shadow 0.3s ease;'
-                )}>{h.done ? '✓' : ''}</div>
-                <div style={css('font-size:11px;font-weight:600;margin-top:6px;')}>{h.label}</div>
-                <div style={css('font-size:9px;font-weight:600;letter-spacing:0.05em;color:oklch(0.55 0.025 228);margin-top:1px;')}>
-                  {h.category}{hasSubtasks ? ' · ' + subtasksDone + '/' + h.subtasks.length : ''}
-                </div>
-                {habitBurst === h.id && particles.map((p) => <div key={p.idx} style={p.style} />)}
-              </div>
-              );
-            })}
+            {(() => {
+              // Chunked into rows of 3 (matching the 3-column grid) so the
+              // expanded checklist can be inserted as a grid-column:1/-1 item
+              // right after the row its habit belongs to -- CSS grid honors
+              // DOM order, so a full-width item placed here pushes later
+              // rows down instead of appearing at the very bottom. Elo's
+              // correction: he wanted it "right underneath the main task
+              // instead underneath all the tasks."
+              const rows = [];
+              for (let i = 0; i < habits.length; i += 3) rows.push(habits.slice(i, i + 3));
+              return rows.map((row, ri) => (
+                <React.Fragment key={ri}>
+                  {row.map((h) => (
+                    <HabitTile
+                      key={h.id} h={h} todayStr={todayStr}
+                      expandedHabitId={expandedHabitId} toggleHabitExpand={toggleHabitExpand} toggleHabit={toggleHabit}
+                      habitBurst={habitBurst} particles={particles}
+                    />
+                  ))}
+                  {(() => {
+                    const expanded = row.find((h) => h.id === expandedHabitId && h.subtasks.length > 0);
+                    return expanded && (
+                      <HabitSubtaskChecklist habit={expanded} todayStr={todayStr} toggleSubtask={toggleSubtask} />
+                    );
+                  })()}
+                </React.Fragment>
+              ));
+            })()}
           </div>
-
-          {expandedHabitId && habits.find((h) => h.id === expandedHabitId && h.subtasks.length > 0) && (
-            <HabitSubtaskChecklist
-              habit={habits.find((h) => h.id === expandedHabitId)}
-              todayStr={todayStr}
-              toggleSubtask={toggleSubtask}
-            />
-          )}
 
           {habitsManageOpen && (
             <div style={css('margin-top:14px;padding-top:14px;border-top:1px solid oklch(0.48 0.14 210);display:flex;flex-direction:column;gap:10px;')}>
@@ -650,16 +688,34 @@ export default function HomeTab(props) {
                         <div style={css('font-size:8.5px;font-weight:700;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>
                           SUB-TASKS (OPTIONAL -- ALL MUST BE DONE TO COMPLETE THIS HABIT)
                         </div>
-                        {h.subtasks.map((s) => (
-                          <div key={s.id} style={css('display:flex;align-items:center;gap:6px;')}>
-                            <div style={css('flex:1;min-width:0;font-size:11px;color:oklch(0.75 0.02 228);')}>{s.label}</div>
+                        <div style={css('display:flex;flex-wrap:wrap;gap:6px;')}>
+                          {h.subtasks.map((s) => (
                             <div
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => deleteSubtask(h.id, s.id)}
-                              style={css('width:18px;height:18px;flex-shrink:0;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:10px;')}
-                            >✕</div>
-                          </div>
-                        ))}
+                              key={s.id}
+                              draggable
+                              onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', String(s.id)); setDraggingSubtaskId(s.id); }}
+                              onDragEnd={(e) => { e.stopPropagation(); setDraggingSubtaskId(null); }}
+                              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                              onDrop={(e) => {
+                                e.preventDefault(); e.stopPropagation();
+                                reorderSubtasks(h.id, Number(e.dataTransfer.getData('text/plain')), s.id);
+                                setDraggingSubtaskId(null);
+                              }}
+                              style={css(
+                                'display:flex;align-items:center;gap:5px;padding:5px 7px;border-radius:6px;background:oklch(0.16 0.075 238);border:1px solid oklch(0.4 0.08 220);transition:opacity 0.15s ease;' +
+                                (draggingSubtaskId === s.id ? 'opacity:0.35;' : 'opacity:1;')
+                              )}
+                            >
+                              <span style={css('cursor:grab;color:oklch(0.45 0.025 228);font-size:11px;letter-spacing:-1px;flex-shrink:0;')}>⋮⋮</span>
+                              <span style={css('font-size:11px;color:oklch(0.75 0.02 228);white-space:nowrap;')}>{s.label}</span>
+                              <div
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => deleteSubtask(h.id, s.id)}
+                                style={css('width:16px;height:16px;flex-shrink:0;border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:9px;')}
+                              >✕</div>
+                            </div>
+                          ))}
+                        </div>
                         <div style={css('display:flex;gap:6px;')}>
                           <input
                             value={subtaskAddLabel}

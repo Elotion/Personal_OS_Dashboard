@@ -251,6 +251,7 @@ export default function App() {
   // a habit inline in the manage list).
   const [expandedHabitId, setExpandedHabitId] = useState(initialUiState.expandedHabitId ?? null);
   const [subtaskAddLabel, setSubtaskAddLabel] = useState('');
+  const [draggingSubtaskId, setDraggingSubtaskId] = useState(null);
 
   const [goals, setGoals] = useState([]);
   const weeklyGoals = useMemo(() => goals.filter((g) => g.timeframe === 'THIS WEEK'), [goals]);
@@ -755,6 +756,27 @@ export default function App() {
     fetch('/api/habit-subtasks/' + subtaskId, { method: 'DELETE' }).catch((e) => console.error(e));
   };
 
+  // Mirrors reorderHabits above exactly -- same splice-and-reindex approach,
+  // just scoped to one habit's subtasks array instead of the top-level list.
+  const reorderSubtasks = (habitId, draggedId, targetId) => {
+    if (draggedId === targetId) return;
+    setHabits((prev) =>
+      prev.map((h) => {
+        if (h.id !== habitId) return h;
+        const fromIdx = h.subtasks.findIndex((s) => s.id === draggedId);
+        const toIdx = h.subtasks.findIndex((s) => s.id === targetId);
+        if (fromIdx === -1 || toIdx === -1) return h;
+        const list = [...h.subtasks];
+        const [moved] = list.splice(fromIdx, 1);
+        list.splice(toIdx, 0, moved);
+        list.forEach((s, i) => {
+          apiSend('/api/habit-subtasks/' + s.id, 'PUT', { sort_order: i }).catch((e) => console.error(e));
+        });
+        return { ...h, subtasks: list };
+      })
+    );
+  };
+
   // ---- GOALS handlers (backed by the real API) ----
   const addWeeklyGoal = () => {
     const text = weeklyInput.trim();
@@ -1232,6 +1254,7 @@ export default function App() {
           addHabit={addHabit} deleteHabit={deleteHabit}
           expandedHabitId={expandedHabitId} toggleHabitExpand={toggleHabitExpand}
           toggleSubtask={toggleSubtask} addSubtask={addSubtask} deleteSubtask={deleteSubtask}
+          draggingSubtaskId={draggingSubtaskId} setDraggingSubtaskId={setDraggingSubtaskId} reorderSubtasks={reorderSubtasks}
           subtaskAddLabel={subtaskAddLabel} setSubtaskAddLabel={setSubtaskAddLabel}
           editingHabitId={editingHabitId} editingHabitLabel={editingHabitLabel}
           setEditingHabitLabel={setEditingHabitLabel}
