@@ -67,6 +67,42 @@ function buildNetWorthPaths() {
 }
 const NW = buildNetWorthPaths();
 
+// Renders below the whole 3-column habit grid (not nested inside one grid
+// cell -- CSS grid can't cleanly expand a single cell downward without
+// breaking the row for its neighbors) when a habit with sub-tasks is
+// expanded. Habit only counts as done once every sub-task is checked --
+// Elo's own words: "it is only if you click all of the sub-tasks then you
+// complete that habit."
+function HabitSubtaskChecklist({ habit, todayStr, toggleSubtask }) {
+  return (
+    <div style={css('margin-top:12px;padding-top:12px;border-top:1px solid oklch(0.48 0.14 210);')}>
+      <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.55 0.025 228);margin-bottom:8px;')}>
+        {habit.label.toUpperCase()} · SUB-TASKS · ALL REQUIRED TO COMPLETE
+      </div>
+      <div style={css('display:flex;flex-direction:column;gap:6px;')}>
+        {habit.subtasks.map((s, i) => {
+          const done = s.completedDate === todayStr;
+          return (
+            <div
+              key={s.id}
+              onClick={() => toggleSubtask(habit.id, s.id)}
+              style={css('display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;background:oklch(0.12 0.06 240);cursor:pointer;transition:opacity 0.2s ease;')}
+            >
+              <div style={css(
+                'width:14px;height:14px;border-radius:4px;flex-shrink:0;border:1.5px solid ' +
+                (done ? GOLD : 'oklch(0.4 0.025 228)') + ';background:' + (done ? GOLD.replace(')', ' / 0.18)') : 'transparent') +
+                ';display:flex;align-items:center;justify-content:center;font-size:10px;color:' + GOLD + ';'
+              )}>{done ? '✓' : ''}</div>
+              <div style={css('font-size:9px;color:oklch(0.5 0.025 228);flex-shrink:0;')}>{i + 1}.</div>
+              <div style={css('font-size:12px;flex:1;min-width:0;' + (done ? 'color:oklch(0.5 0.025 228);text-decoration:line-through;' : ''))}>{s.label}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function HomeTab(props) {
   const {
     now, greeting, dayLabel,
@@ -75,7 +111,9 @@ export default function HomeTab(props) {
     financeHidden, setFinanceHidden,
     keyTasks, toggleTask,
     captureText, setCaptureText, submitCapture,
-    habits, toggleHabit, habitBurst, streakCount, streakBurst,
+    habits, toggleHabit, todayStr, habitBurst, streakCount, streakBurst,
+    expandedHabitId, toggleHabitExpand, toggleSubtask, addSubtask, deleteSubtask,
+    subtaskAddLabel, setSubtaskAddLabel,
     habitsManageOpen, toggleHabitsManage,
     habitAddLabel, setHabitAddLabel, habitAddCategory, setHabitAddCategory, addHabit, deleteHabit,
     editingHabitId, editingHabitLabel, setEditingHabitLabel, startEditHabit, saveEditHabit, cancelEditHabit,
@@ -463,13 +501,16 @@ export default function HomeTab(props) {
           </div>
 
           <div style={css('display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;')}>
-            {habits.map((h) => (
+            {habits.map((h) => {
+              const hasSubtasks = h.subtasks.length > 0;
+              const subtasksDone = hasSubtasks ? h.subtasks.filter((s) => s.completedDate === todayStr).length : 0;
+              return (
               <div
                 key={h.id}
-                onClick={() => toggleHabit(h.id)}
+                onClick={() => (hasSubtasks ? toggleHabitExpand(h.id) : toggleHabit(h.id))}
                 style={css(
                   'position:relative;overflow:visible;background:oklch(0.12 0.06 240);border-radius:9px;padding:9px 10px;cursor:pointer;border:1px solid ' +
-                  (h.done ? 'oklch(0.86 0.17 195 / 0.4)' : 'oklch(0.58 0.18 204)') + ';opacity:' + (h.done ? '0.65' : '1') +
+                  (expandedHabitId === h.id ? GOLD : h.done ? 'oklch(0.86 0.17 195 / 0.4)' : 'oklch(0.58 0.18 204)') + ';opacity:' + (h.done ? '0.65' : '1') +
                   ';box-shadow:' +
                   (h.done
                     ? '0 0 14px oklch(0.8 0.19 200 / 0.06), 0 0 28px oklch(0.62 0.2 235 / 0.035)'
@@ -499,11 +540,22 @@ export default function HomeTab(props) {
                   ';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;transition:box-shadow 0.3s ease;'
                 )}>{h.done ? '✓' : ''}</div>
                 <div style={css('font-size:11px;font-weight:600;margin-top:6px;')}>{h.label}</div>
-                <div style={css('font-size:9px;font-weight:600;letter-spacing:0.05em;color:oklch(0.55 0.025 228);margin-top:1px;')}>{h.category}</div>
+                <div style={css('font-size:9px;font-weight:600;letter-spacing:0.05em;color:oklch(0.55 0.025 228);margin-top:1px;')}>
+                  {h.category}{hasSubtasks ? ' · ' + subtasksDone + '/' + h.subtasks.length : ''}
+                </div>
                 {habitBurst === h.id && particles.map((p) => <div key={p.idx} style={p.style} />)}
               </div>
-            ))}
+              );
+            })}
           </div>
+
+          {expandedHabitId && habits.find((h) => h.id === expandedHabitId && h.subtasks.length > 0) && (
+            <HabitSubtaskChecklist
+              habit={habits.find((h) => h.id === expandedHabitId)}
+              todayStr={todayStr}
+              toggleSubtask={toggleSubtask}
+            />
+          )}
 
           {habitsManageOpen && (
             <div style={css('margin-top:14px;padding-top:14px;border-top:1px solid oklch(0.48 0.14 210);display:flex;flex-direction:column;gap:10px;')}>
@@ -552,42 +604,78 @@ export default function HomeTab(props) {
                       }
                     }}
                     style={css(
-                      'display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid oklch(0.48 0.14 210);transition:opacity 0.15s ease;' +
+                      'display:flex;flex-direction:column;border-bottom:1px solid oklch(0.48 0.14 210);transition:opacity 0.15s ease;' +
                       (draggingHabitId === h.id ? 'opacity:0.35;' : 'opacity:1;')
                     )}
                   >
-                    <div style={css('cursor:grab;color:oklch(0.45 0.025 228);font-size:12px;flex-shrink:0;letter-spacing:-1px;')}>⋮⋮</div>
-                    {editingHabitId === h.id ? (
-                      <input
-                        autoFocus
-                        value={editingHabitLabel}
-                        onChange={(e) => setEditingHabitLabel(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') saveEditHabit(); if (e.key === 'Escape') cancelEditHabit(); }}
-                        style={css('flex:1;min-width:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.86 0.17 195);border-radius:6px;padding:6px 8px;color:oklch(0.92 0.015 228);font-size:12px;')}
-                      />
-                    ) : (
-                      <div style={css('flex:1;min-width:0;font-size:12px;font-weight:500;')}>{h.label}</div>
+                    <div style={css('display:flex;align-items:center;gap:10px;padding:8px 4px;')}>
+                      <div style={css('cursor:grab;color:oklch(0.45 0.025 228);font-size:12px;flex-shrink:0;letter-spacing:-1px;')}>⋮⋮</div>
+                      {editingHabitId === h.id ? (
+                        <input
+                          autoFocus
+                          value={editingHabitLabel}
+                          onChange={(e) => setEditingHabitLabel(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveEditHabit(); if (e.key === 'Escape') cancelEditHabit(); }}
+                          style={css('flex:1;min-width:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.86 0.17 195);border-radius:6px;padding:6px 8px;color:oklch(0.92 0.015 228);font-size:12px;')}
+                        />
+                      ) : (
+                        <div style={css('flex:1;min-width:0;font-size:12px;font-weight:500;')}>{h.label}</div>
+                      )}
+                      {editingHabitId === h.id ? (
+                        <select
+                          value={editingHabitCategory}
+                          onChange={(e) => setEditingHabitCategory(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveEditHabit(); if (e.key === 'Escape') cancelEditHabit(); }}
+                          style={css('flex-shrink:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.86 0.17 195);border-radius:6px;padding:6px 8px;color:oklch(0.92 0.015 228);font-size:11px;')}
+                        >
+                          {ENTITY_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      ) : (
+                        <div style={css('font-size:9px;font-weight:600;letter-spacing:0.05em;color:oklch(0.5 0.025 228);flex-shrink:0;')}>{h.category}</div>
+                      )}
+                      <div
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => startEditHabit(h.id)}
+                        style={css('width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.5 0.025 228);font-size:11px;flex-shrink:0;')}
+                      >✎</div>
+                      <div
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => deleteHabit(h.id)}
+                        style={css('width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:12px;flex-shrink:0;')}
+                      >✕</div>
+                    </div>
+
+                    {editingHabitId === h.id && (
+                      <div style={css('padding:2px 4px 10px 22px;display:flex;flex-direction:column;gap:6px;')}>
+                        <div style={css('font-size:8.5px;font-weight:700;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>
+                          SUB-TASKS (OPTIONAL -- ALL MUST BE DONE TO COMPLETE THIS HABIT)
+                        </div>
+                        {h.subtasks.map((s) => (
+                          <div key={s.id} style={css('display:flex;align-items:center;gap:6px;')}>
+                            <div style={css('flex:1;min-width:0;font-size:11px;color:oklch(0.75 0.02 228);')}>{s.label}</div>
+                            <div
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => deleteSubtask(h.id, s.id)}
+                              style={css('width:18px;height:18px;flex-shrink:0;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:10px;')}
+                            >✕</div>
+                          </div>
+                        ))}
+                        <div style={css('display:flex;gap:6px;')}>
+                          <input
+                            value={subtaskAddLabel}
+                            onChange={(e) => setSubtaskAddLabel(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') addSubtask(h.id); }}
+                            placeholder="Add a sub-task"
+                            style={css('flex:1;min-width:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.4 0.08 220);border-radius:6px;padding:6px 8px;color:oklch(0.92 0.015 228);font-size:11px;')}
+                          />
+                          <div
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => addSubtask(h.id)}
+                            style={css('width:26px;height:26px;flex-shrink:0;border-radius:6px;background:oklch(0.4 0.08 220);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;')}
+                          >+</div>
+                        </div>
+                      </div>
                     )}
-                    {editingHabitId === h.id ? (
-                      <select
-                        value={editingHabitCategory}
-                        onChange={(e) => setEditingHabitCategory(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') saveEditHabit(); if (e.key === 'Escape') cancelEditHabit(); }}
-                        style={css('flex-shrink:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.86 0.17 195);border-radius:6px;padding:6px 8px;color:oklch(0.92 0.015 228);font-size:11px;')}
-                      >
-                        {ENTITY_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                    ) : (
-                      <div style={css('font-size:9px;font-weight:600;letter-spacing:0.05em;color:oklch(0.5 0.025 228);flex-shrink:0;')}>{h.category}</div>
-                    )}
-                    <div
-                      onClick={() => startEditHabit(h.id)}
-                      style={css('width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.5 0.025 228);font-size:11px;flex-shrink:0;')}
-                    >✎</div>
-                    <div
-                      onClick={() => deleteHabit(h.id)}
-                      style={css('width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:12px;flex-shrink:0;')}
-                    >✕</div>
                   </div>
                 ))}
                 {habits.length === 0 && (

@@ -65,6 +65,10 @@ function transformHabit(row, localCompletions) {
     id: row.id, label: row.label, category: row.category,
     entity_id: row.entity_id, sort_order: row.sort_order,
     completedDate: row.completed_date || (localCompletions && localCompletions[row.id]) || null,
+    subtasks: (row.habit_subtasks || [])
+      .slice()
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map((s) => ({ id: s.id, label: s.label, completedDate: s.completed_date || null })),
   };
 }
 
@@ -241,6 +245,12 @@ export default function App() {
   const [editingHabitLabel, setEditingHabitLabel] = useState('');
   const [editingHabitCategory, setEditingHabitCategory] = useState('PERSONAL');
   const [draggingHabitId, setDraggingHabitId] = useState(null);
+  // Which single habit's sub-task checklist is open on the main grid (daily
+  // use -- checking sub-tasks off), separate from habitsManageOpen (editing
+  // the habit/sub-task structure itself) and from editingHabitId (renaming
+  // a habit inline in the manage list).
+  const [expandedHabitId, setExpandedHabitId] = useState(initialUiState.expandedHabitId ?? null);
+  const [subtaskAddLabel, setSubtaskAddLabel] = useState('');
 
   const [goals, setGoals] = useState([]);
   const weeklyGoals = useMemo(() => goals.filter((g) => g.timeframe === 'THIS WEEK'), [goals]);
@@ -685,6 +695,66 @@ export default function App() {
     fetch('/api/habits/' + id, { method: 'DELETE' }).catch((e) => console.error(e));
   };
 
+  // ---- HABIT SUBTASKS (optional per-habit checklist) ----
+  // A habit with subtasks derives its own "done today" from whether every
+  // subtask is done -- the main tile's checkbox is no longer independently
+  // clickable for those habits; clicking the tile expands this checklist
+  // instead. Mirrors the server's own cascade logic (server.js's
+  // PUT /api/habit-subtasks/:id) client-side for an instant optimistic
+  // update, same "optimistic UI, fire-and-forget writes" pattern as
+  // everywhere else in this app.
+  const toggleHabitExpand = (id) => setExpandedHabitId((cur) => (cur === id ? null : id));
+
+  const toggleSubtask = (habitId, subtaskId) => {
+    const todayStr = localDateStr();
+    setHabits((prev) =>
+      prev.map((h) => {
+        if (h.id !== habitId) return h;
+        const nextSubtasks = h.subtasks.map((s) =>
+          s.id === subtaskId ? { ...s, completedDate: s.completedDate === todayStr ? null : todayStr } : s
+        );
+        const allDone = nextSubtasks.length > 0 && nextSubtasks.every((s) => s.completedDate === todayStr);
+        const wasDone = h.completedDate === todayStr;
+        if (allDone !== wasDone) {
+          setHabitBurst(allDone ? h.id : null);
+          const map = loadHabitCompletions();
+          if (allDone) map[h.id] = todayStr; else delete map[h.id];
+          saveHabitCompletions(map);
+        }
+        return { ...h, subtasks: nextSubtasks, completedDate: allDone ? todayStr : null };
+      })
+    );
+    const toggledSubtask = habits.find((h) => h.id === habitId)?.subtasks.find((s) => s.id === subtaskId);
+    const nowDone = !(toggledSubtask && toggledSubtask.completedDate === todayStr);
+    apiSend('/api/habit-subtasks/' + subtaskId, 'PUT', { completed_date: nowDone ? todayStr : null })
+      .catch((e) => console.error(e));
+  };
+
+  const addSubtask = (habitId) => {
+    const label = subtaskAddLabel.trim();
+    if (!label) return;
+    apiSend('/api/habits/' + habitId + '/subtasks', 'POST', { label })
+      .then((rows) => {
+        const created = { id: rows[0].id, label: rows[0].label, completedDate: null };
+        setHabits((hs) => hs.map((h) => (h.id === habitId ? { ...h, subtasks: [...h.subtasks, created] } : h)));
+      })
+      .catch((e) => console.error(e));
+    setSubtaskAddLabel('');
+  };
+
+  const deleteSubtask = (habitId, subtaskId) => {
+    const todayStr = localDateStr();
+    setHabits((prev) =>
+      prev.map((h) => {
+        if (h.id !== habitId) return h;
+        const nextSubtasks = h.subtasks.filter((s) => s.id !== subtaskId);
+        const allDone = nextSubtasks.length > 0 && nextSubtasks.every((s) => s.completedDate === todayStr);
+        return { ...h, subtasks: nextSubtasks, completedDate: allDone ? todayStr : null };
+      })
+    );
+    fetch('/api/habit-subtasks/' + subtaskId, { method: 'DELETE' }).catch((e) => console.error(e));
+  };
+
   // ---- GOALS handlers (backed by the real API) ----
   const addWeeklyGoal = () => {
     const text = weeklyInput.trim();
@@ -863,7 +933,7 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(UI_STATE_KEY, JSON.stringify({
       activeTab,
-      habitsManageOpen, habitAddLabel, habitAddCategory,
+      habitsManageOpen, habitAddLabel, habitAddCategory, expandedHabitId,
       calendarManageOpen, weeklyGoalAddOpen, monthlyGoalAddOpen,
       crmView, crmSearch, crmAddOpen, crmAddTitle, crmAddTimeframe, crmAddEntity, crmAddIsKey, crmSmartText,
       brainFilter, selectedEntityId, entityDetailOpen, entityNotes,
@@ -872,7 +942,7 @@ export default function App() {
     }));
   }, [
     activeTab,
-    habitsManageOpen, habitAddLabel, habitAddCategory,
+    habitsManageOpen, habitAddLabel, habitAddCategory, expandedHabitId,
     calendarManageOpen, weeklyGoalAddOpen, monthlyGoalAddOpen,
     crmView, crmSearch, crmAddOpen, crmAddTitle, crmAddTimeframe, crmAddEntity, crmAddIsKey, crmSmartText,
     brainFilter, selectedEntityId, entityDetailOpen, entityNotes,
@@ -1154,12 +1224,15 @@ export default function App() {
           financeHidden={financeHidden} setFinanceHidden={setFinanceHidden}
           keyTasks={keyTasksDerived} toggleTask={toggleTask}
           captureText={captureText} setCaptureText={setCaptureText} submitCapture={submitCapture}
-          habits={habitsWithDone} toggleHabit={toggleHabit}
+          habits={habitsWithDone} toggleHabit={toggleHabit} todayStr={todayStr}
           habitBurst={habitBurst} streakCount={streak.count} streakBurst={streakBurst}
           habitsManageOpen={habitsManageOpen} toggleHabitsManage={toggleHabitsManage}
           habitAddLabel={habitAddLabel} setHabitAddLabel={setHabitAddLabel}
           habitAddCategory={habitAddCategory} setHabitAddCategory={setHabitAddCategory}
           addHabit={addHabit} deleteHabit={deleteHabit}
+          expandedHabitId={expandedHabitId} toggleHabitExpand={toggleHabitExpand}
+          toggleSubtask={toggleSubtask} addSubtask={addSubtask} deleteSubtask={deleteSubtask}
+          subtaskAddLabel={subtaskAddLabel} setSubtaskAddLabel={setSubtaskAddLabel}
           editingHabitId={editingHabitId} editingHabitLabel={editingHabitLabel}
           setEditingHabitLabel={setEditingHabitLabel}
           editingHabitCategory={editingHabitCategory} setEditingHabitCategory={setEditingHabitCategory}

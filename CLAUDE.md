@@ -239,6 +239,85 @@ CREATE TABLE habits (
 --     -d '{"completed_date":"2026-01-01"}'
 -- A 400 "column ... does not exist" means something claimed live here actually isn't.
 
+-- RESOLVED 2026-08-25: habit_subtasks -- an OPTIONAL per-habit checklist.
+-- Elo's own words: "in the morning, I can create subtasks of brushing my
+-- teeth, morning yoga, breakfast... it is only if you click all of the
+-- sub-tasks then you complete that habit." A habit with zero sub-tasks
+-- behaves exactly as it always has (direct checkbox toggle) -- this is
+-- additive, not a replacement for the simple case.
+--   CREATE TABLE habit_subtasks (
+--     id SERIAL PRIMARY KEY,
+--     habit_id INTEGER REFERENCES habits(id) ON DELETE CASCADE,
+--     label TEXT NOT NULL,
+--     sort_order INTEGER DEFAULT 0,
+--     completed_date DATE,
+--     completed_at TIMESTAMP,
+--     created_at TIMESTAMP DEFAULT NOW()
+--   );
+--   ALTER TABLE habit_subtasks ENABLE ROW LEVEL SECURITY;
+--   CREATE POLICY "Enable all for public" ON habit_subtasks FOR ALL USING (true) WITH CHECK (true);
+--
+-- completed_date mirrors habits' own column (the day-level "done today"
+-- gate). completed_at is a real timestamp, set alongside it and cleared on
+-- uncheck -- captured deliberately, not just a boolean, per a separate
+-- request from Elo the same day that as much of his input as possible
+-- should land in Supabase with real timestamps ("these small data can be
+-- overlooked... patterns recognition benefits in the future" -- see the
+-- standing memory on this). GET /api/habits now embeds
+-- `habit_subtasks(*)` via Supabase's relationship-based select
+-- (`select('*, entities(name,icon), habit_subtasks(*)')`) rather than a
+-- second round-trip -- one request still returns everything the frontend
+-- needs, same as before this feature.
+--
+-- Server-side cascade (server.js, PUT /api/habit-subtasks/:id): toggling a
+-- sub-task re-checks the FULL set for that habit and flips the parent's own
+-- completed_date/completed_today to match "are ALL sub-tasks done today,"
+-- through the exact same logHabitCompletion() a direct habit toggle uses
+-- (extracted into a shared function specifically so the two paths can't
+-- drift out of sync) -- so streak count and /api/analytics/habits stay
+-- correct whether a habit was completed directly or by finishing its last
+-- sub-task. Frontend (App.js's toggleSubtask) mirrors this same "all done?"
+-- check optimistically for an instant UI update, same "optimistic UI,
+-- fire-and-forget writes" pattern as everywhere else in this app.
+--
+-- UI: the 3-column habit grid can't cleanly expand a single cell downward
+-- without breaking the grid for its neighbors, so a habit with sub-tasks
+-- renders its checklist as a full-width block below the WHOLE grid when
+-- expanded (`expandedHabitId` in App.js, part of the persisted UI-state
+-- blob), not nested in its own tile. Clicking a tile that has sub-tasks
+-- toggles this expand instead of completing it directly -- the checkbox
+-- for such a tile is purely a derived display of "all done," matching
+-- Elo's stated rule. Sub-tasks are added/removed from the same
+-- habit-edit (pencil) panel that already existed for renaming/
+-- recategorizing a habit, not a separate UI.
+--
+-- REAL BUG found and fixed during testing: the "+"/"✕" buttons inside the
+-- sub-task editor are plain clickable divs (not native buttons/inputs).
+-- Clicking one moved focus away from the sub-task label INPUT, which
+-- triggered the surrounding row's existing onBlur guard (there to save-
+-- and-close when focus leaves the row entirely) -- so clicking "add" closed
+-- the whole edit panel before the click could reliably register, some-
+-- times silently dropping the sub-task. Reproduced directly: typed "morning
+-- yoga," clicked +, and confirmed via a fresh GET that only the earlier
+-- "brush teeth" sub-task existed. Fixed with the standard technique for
+-- exactly this class of bug -- `onMouseDown={(e) => e.preventDefault()}`
+-- on the button, which stops the browser from blurring the focused input
+-- in the first place, rather than trying to out-guess relatedTarget
+-- semantics. Applied to both new sub-task buttons and, for the same
+-- underlying risk, the pre-existing per-habit edit/delete buttons in that
+-- same row. Re-verified afterward via direct DOM inspection (not just a
+-- screenshot) that the edit panel stayed open and the sub-task actually
+-- landed in a fresh GET.
+--
+-- Full cascade verified live, both directions: expanded a real habit's
+-- checklist, checked both sub-tasks, watched the tile flip to done and the
+-- daily score update, confirmed via GET /api/analytics/habits that a real
+-- completion was logged (avg_completion_hour matched the actual clock
+-- time); unchecked one sub-task, watched the tile immediately revert and
+-- the daily score drop back, confirmed the completions record was removed
+-- again. All test sub-tasks deleted afterward, confirmed via a fresh GET
+-- that real habits were left untouched.
+
 CREATE TABLE habit_streak (
   id SERIAL PRIMARY KEY,
   count INTEGER NOT NULL DEFAULT 0,
@@ -943,6 +1022,28 @@ exactly this reason).
   number offset that only happens to work for one specific case. Verified via
   `getBoundingClientRect()` on both, not just eyeballing a screenshot: dot center
   and row center matched to within 0.5px.
+- **Shared `CARD` style (`theme.js`) tuned for more contrast (2026-08-25), from a
+  reference screenshot Elo shared of a different mockup.** He wanted the same subtle
+  silhouette/contrast technique the reference used, in this app's own blue rather than
+  a new color, applied only to "decently sized boxes" -- explicitly NOT toggle
+  buttons, tab switchers, or individual task/habit rows. Since `CARD` is already the
+  one shared constant every such box in this app uses (HOME's cards, CRM's category
+  groups, BRAIN's entity cards, JOURNAL's entries, HEALTH's panels) and small chrome
+  never uses it, tuning that single constant was the entire, exactly-scoped change --
+  no per-file edits needed. Background deepened slightly relative to the page
+  (`oklch(0.12 0.06 240)`), border shifted a little richer, the existing bevel inset
+  highlight bumped slightly stronger. Kept deliberately restrained -- Elo's own word
+  was "subtle" twice in the same sentence describing what he wanted.
+- **Habit sub-tasks (2026-08-25) -- an optional per-habit checklist.** Full writeup,
+  including the schema, the server-side completion cascade, and a real focus/blur bug
+  found and fixed during testing, lives in the schema section above right after the
+  main `habits` table (search "RESOLVED 2026-08-25: habit_subtasks"). Summary: a habit
+  can optionally have sub-tasks; if it does, the habit only counts as done once every
+  sub-task is checked, and its main checkbox becomes a derived display rather than
+  something you click directly -- clicking such a tile expands the checklist instead.
+  A habit with no sub-tasks is completely unaffected. `expandedHabitId` (which single
+  habit's checklist is open) is part of the same persisted UI-state blob as everything
+  else on HOME.
 
 ## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
 before it costs him a future fix-cycle, not a response to one specific report.

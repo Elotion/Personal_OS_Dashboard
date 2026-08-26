@@ -165,11 +165,19 @@ app.delete('/api/tasks/:id', (req, res) => {
 // Matching on the column name in the message covers both.
 const missingSortOrderColumn = (error) =>
   error && /sort_order/i.test(error.message || '');
+// Defined here (not down by the other habit_subtasks routes) so it's
+// available to GET /api/habits below -- const isn't hoisted.
+const missingHabitSubtasksTable = (error) => error && /habit_subtasks/i.test(error.message || '');
 
 app.get('/api/habits', async (req, res) => {
-  let result = await supabase.from('habits').select('*, entities(name, icon)')
+  let result = await supabase.from('habits').select('*, entities(name, icon), habit_subtasks(*)')
     .order('sort_order', { ascending: true, nullsFirst: false })
     .order('id');
+  if (missingHabitSubtasksTable(result.error)) {
+    result = await supabase.from('habits').select('*, entities(name, icon)')
+      .order('sort_order', { ascending: true, nullsFirst: false })
+      .order('id');
+  }
   if (missingSortOrderColumn(result.error)) {
     result = await supabase.from('habits').select('*, entities(name, icon)').order('id');
   }
@@ -203,31 +211,39 @@ app.post('/api/habits', async (req, res) => {
 // never block the main habits update, which has to keep working regardless.
 const missingHabitCompletionsTable = (error) => error && /habit_completions/i.test(error.message || '');
 
+// Shared side effect of "a habit became done/undone for a given day" --
+// used both by a direct habit toggle (PUT /api/habits/:id below) and the
+// sub-task cascade (PUT /api/habit-subtasks/:id further down, when
+// completing/unchecking a sub-task flips whether ALL of a habit's
+// sub-tasks are done). One place logs/unlogs habit_completions instead of
+// duplicating this in two call sites that need to stay in sync.
+async function logHabitCompletion(habitId, completedDate) {
+  if (completedDate) {
+    const dayStart = completedDate + 'T00:00:00';
+    const dayEnd = completedDate + 'T23:59:59.999';
+    const existing = await supabase.from('habit_completions')
+      .select('id').eq('habit_id', habitId).gte('completed_at', dayStart).lte('completed_at', dayEnd).limit(1);
+    if (!existing.error && (!existing.data || existing.data.length === 0)) {
+      const ins = await supabase.from('habit_completions').insert([{ habit_id: habitId, completed_at: localTimestampStr() }]);
+      if (ins.error && !missingHabitCompletionsTable(ins.error)) console.error('habit_completions insert failed:', ins.error);
+    } else if (existing.error && !missingHabitCompletionsTable(existing.error)) {
+      console.error('habit_completions lookup failed:', existing.error);
+    }
+  } else {
+    const today = localDateStr(new Date());
+    const dayStart = today + 'T00:00:00';
+    const dayEnd = today + 'T23:59:59.999';
+    const del = await supabase.from('habit_completions').delete().eq('habit_id', habitId).gte('completed_at', dayStart).lte('completed_at', dayEnd);
+    if (del.error && !missingHabitCompletionsTable(del.error)) console.error('habit_completions delete failed:', del.error);
+  }
+}
+
 app.put('/api/habits/:id', async (req, res) => {
   const id = req.params.id;
   const body = req.body;
 
   if (Object.prototype.hasOwnProperty.call(body, 'completed_date')) {
-    if (body.completed_date) {
-      // checked -- log today's completion if one isn't already on record
-      const dayStart = body.completed_date + 'T00:00:00';
-      const dayEnd = body.completed_date + 'T23:59:59.999';
-      const existing = await supabase.from('habit_completions')
-        .select('id').eq('habit_id', id).gte('completed_at', dayStart).lte('completed_at', dayEnd).limit(1);
-      if (!existing.error && (!existing.data || existing.data.length === 0)) {
-        const ins = await supabase.from('habit_completions').insert([{ habit_id: id, completed_at: localTimestampStr() }]);
-        if (ins.error && !missingHabitCompletionsTable(ins.error)) console.error('habit_completions insert failed:', ins.error);
-      } else if (existing.error && !missingHabitCompletionsTable(existing.error)) {
-        console.error('habit_completions lookup failed:', existing.error);
-      }
-    } else {
-      // unchecked -- remove today's logged completion, if any
-      const today = localDateStr(new Date());
-      const dayStart = today + 'T00:00:00';
-      const dayEnd = today + 'T23:59:59.999';
-      const del = await supabase.from('habit_completions').delete().eq('habit_id', id).gte('completed_at', dayStart).lte('completed_at', dayEnd);
-      if (del.error && !missingHabitCompletionsTable(del.error)) console.error('habit_completions delete failed:', del.error);
-    }
+    await logHabitCompletion(id, body.completed_date);
   }
 
   handle(res, supabase.from('habits').update(body).eq('id', id).select());
@@ -235,6 +251,82 @@ app.put('/api/habits/:id', async (req, res) => {
 
 app.delete('/api/habits/:id', (req, res) => {
   handle(res, supabase.from('habits').delete().eq('id', req.params.id));
+});
+
+// ---------------- HABIT SUBTASKS ----------------
+// Optional per-habit checklist -- "in the morning, I can create subtasks of
+// brushing my teeth, morning yoga, breakfast... it is only if you click all
+// of the sub-tasks then you complete that habit" (Elo's own words,
+// 2026-08-25). A habit with zero sub-tasks behaves exactly as before
+// (direct checkbox toggle) -- this is additive, not a replacement for the
+// simple case, so "only if it's applicable."
+//
+// completed_date mirrors habits' own column (day-level "is this done
+// today" gate). completed_at is a real timestamp, set alongside it and
+// cleared on uncheck -- captured deliberately, not just a boolean, per
+// Elo's separate request the same day that as much of his input as
+// possible should land in Supabase with real timestamps for future pattern
+// recognition, not be dropped as "too small to matter."
+// (missingHabitSubtasksTable is defined earlier, above GET /api/habits.)
+
+app.post('/api/habits/:id/subtasks', async (req, res) => {
+  const habitId = req.params.id;
+  const label = (req.body.label || '').trim();
+  if (!label) return res.status(400).json({ error: 'label is required' });
+
+  const existing = await supabase.from('habit_subtasks')
+    .select('sort_order').eq('habit_id', habitId).order('sort_order', { ascending: false }).limit(1);
+  if (existing.error) {
+    if (missingHabitSubtasksTable(existing.error)) return res.status(404).json({ error: 'habit_subtasks table does not exist yet' });
+    console.error(existing.error);
+    return res.status(400).json({ error: existing.error.message });
+  }
+  const nextOrder = existing.data.length ? (existing.data[0].sort_order || 0) + 1 : 0;
+  handle(res, supabase.from('habit_subtasks').insert([{ habit_id: habitId, label, sort_order: nextOrder }]).select());
+});
+
+app.put('/api/habit-subtasks/:id', async (req, res) => {
+  const id = req.params.id;
+  const body = req.body;
+
+  if (!Object.prototype.hasOwnProperty.call(body, 'completed_date')) {
+    handle(res, supabase.from('habit_subtasks').update(body).eq('id', id).select());
+    return;
+  }
+
+  const now = new Date();
+  const patch = { completed_date: body.completed_date, completed_at: body.completed_date ? localTimestampStr(now) : null };
+  const subResult = await supabase.from('habit_subtasks').update(patch).eq('id', id).select();
+  if (subResult.error) {
+    if (missingHabitSubtasksTable(subResult.error)) return res.status(404).json({ error: 'habit_subtasks table does not exist yet' });
+    console.error(subResult.error);
+    return res.status(400).json({ error: subResult.error.message });
+  }
+
+  // Did that toggle just complete (or break) "every sub-task done today"?
+  // Cascade the parent habit's own completed_date/completed_today to
+  // match, through the same logHabitCompletion() a direct toggle uses, so
+  // streak/analytics can't drift out of sync with what the checkboxes show.
+  const habitId = subResult.data[0].habit_id;
+  const today = localDateStr(now);
+  const allSubs = await supabase.from('habit_subtasks').select('completed_date').eq('habit_id', habitId);
+  if (!allSubs.error) {
+    const allDone = allSubs.data.length > 0 && allSubs.data.every((s) => s.completed_date === today);
+    const habitRow = await supabase.from('habits').select('completed_date').eq('id', habitId).maybeSingle();
+    const wasDone = !habitRow.error && habitRow.data && habitRow.data.completed_date === today;
+    if (allDone !== wasDone) {
+      await logHabitCompletion(habitId, allDone ? today : null);
+      const err = (await supabase.from('habits')
+        .update({ completed_today: allDone, completed_date: allDone ? today : null }).eq('id', habitId)).error;
+      if (err) console.error('habit cascade update failed:', err);
+    }
+  }
+
+  res.json(subResult.data[0]);
+});
+
+app.delete('/api/habit-subtasks/:id', (req, res) => {
+  handle(res, supabase.from('habit_subtasks').delete().eq('id', req.params.id));
 });
 
 // ---------------- HABIT STREAK ----------------
