@@ -226,13 +226,20 @@ tweak). This still needs a real pass from Elo's actual chat before it's called d
 a route instead of a table. Remove once Elo's live Telegram pass confirms Stage 2 is
 solid.
 
-**Not started: Stage 3 (voice).** Needs Elo to add `OPENAI_API_KEY` to `.env` himself
-first (get it from platform.openai.com's API keys page) -- `lib/transcribe.js`
-(`transcribeVoice(oggFileUrl)`, raw `fetch`/`FormData` against
-`https://api.openai.com/v1/audio/transcriptions`, deliberately not the `openai` npm
-package for one call's worth of surface area) and a `bot.on('voice', ...)` handler
-feeding the transcript through the already-proven `handleUserMessage` pipeline are
-designed (see the plan file) but not written yet.
+**Stage 3 (voice) code written 2026-08-26, not yet live -- waiting on Elo's
+`OPENAI_API_KEY`.** `lib/transcribe.js` (`transcribeVoice(oggFileUrl)`, raw `fetch`/
+`FormData` against `https://api.openai.com/v1/audio/transcriptions`, deliberately not
+the `openai` npm package for one call's worth of surface area) and `lib/telegram.js`'s
+new `bot.on('voice', ...)` handler (downloads the file via `ctx.telegram.getFileLink()`,
+transcribes it, feeds the transcript through the exact same `handleUserMessage`
+pipeline typed text uses -- not hardcoded to always journal, Claude's own tool choice
+decides) are both written and load cleanly. Verified the graceful-degradation path
+directly: with no `OPENAI_API_KEY` set, `transcribeVoice()` throws a clear
+"OPENAI_API_KEY is not set" error before ever calling OpenAI, and the bot's `catch`
+turns that into a plain "voice notes aren't set up yet" reply instead of crashing.
+**Cannot verify the actual transcription call or a real voice-note round-trip until
+Elo adds the key** -- that's the one remaining step before this line can move to
+RESOLVED.
 
 **Known limitations carried forward, not introduced by this build:** `pendingActions`
 is still keyed by `chatId` only (same as the old `pendingTasks`) -- a second message
@@ -506,7 +513,10 @@ personal-os-dashboard/
 │   ├── context.js            # Fetches + formats Supabase data (incl. Claude-ready text)
 │   ├── dates.js              # Shared localDateStr()/localTimestampStr() (server-side)
 │   ├── google.js             # Google OAuth2 client + Calendar API (Phase 6)
-│   └── telegram.js           # Telegram bot (Phase 7) -- long-polling, calls the Express API
+│   ├── telegram.js           # Telegram bot (Phase 7) -- long-polling, calls the Express API
+│   ├── tools.js               # Agent tool defs/executors/summaries (2026-08-26 rebuild)
+│   ├── agent.js               # Multi-turn tool-use loop the bot runs every message through
+│   └── transcribe.js          # Whisper voice-note transcription (Stage 3, needs OPENAI_API_KEY)
 ├── package.json
 └── client/src/
     ├── App.js                # ALL app state lives here, passed down as props to tabs
@@ -534,6 +544,7 @@ ANTHROPIC_API_KEY=<from console.anthropic.com -> Settings -> API Keys -- server-
 GOOGLE_CLIENT_ID=<from console.cloud.google.com -> APIs & Services -> Clients -- OAuth client ID>
 GOOGLE_CLIENT_SECRET=<same page, paired with the client ID -- server-side only>
 TELEGRAM_BOT_TOKEN=<from @BotFather on Telegram, /newbot -- server-side only>
+OPENAI_API_KEY=<from platform.openai.com -> API keys -- server-side only>
 ```
 `ANTHROPIC_API_KEY` powers Phase 3a's Claude bridge (`lib/anthropic.js`) -- added and confirmed live 2026-08-23.
 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` power Phase 6's Google Calendar OAuth (`lib/google.js`) --
@@ -549,6 +560,11 @@ review or scopes to configure, unlike Google -- created via Telegram's own @BotF
 (`/newbot`), which hands back a token immediately. The bot (`@ZeusExecBot`) runs inside the
 same backend process (started from `server.js`'s `app.listen()` callback) via long-polling,
 not a webhook -- same reasoning as Calendar: no public HTTPS endpoint on localhost yet.
+`OPENAI_API_KEY` powers the Telegram agent's voice-note transcription (`lib/transcribe.js`,
+Stage 3 of the 2026-08-26 agent rebuild) -- get it from platform.openai.com's API keys page.
+Nothing else in this app uses OpenAI; every other AI feature goes through Claude
+(`lib/anthropic.js`). Not yet added -- `bot.on('voice', ...)` degrades gracefully with a
+clear "voice notes aren't set up yet" reply until this is set, rather than crashing.
 `SUPABASE_SERVICE_ROLE_KEY` is the roadmap's security-foundation step (see "Longer-term
 roadmap" below) — `supabaseClient.js` prefers it automatically the moment it's present
 and falls back to the anon key until then, so adding it is the entire fix, no other code
