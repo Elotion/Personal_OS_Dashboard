@@ -2,53 +2,140 @@ import React from 'react';
 import { css } from '../css';
 import { CARD, CARD_CLASS, GLOW_STRONG } from '../theme';
 
-const RANGE_OPTIONS = [7, 14, 30, 60, 90];
+// 3650 ("ALL") maps to lib/context.js's getHealthContext clamp of the same
+// value -- ~10 years comfortably covers "all time" for a personal dashboard
+// whose real data only starts 2026-08-26, without needing a separate
+// "no limit" backend mode. Added 2026-08-26 at Elo's request ("add a all
+// time time range on the top right") -- the RangePicker already sits
+// top-right of the AI INSIGHT card (the page's first content block), so
+// this is a new option on the existing picker, not a new element.
+const RANGE_OPTIONS = [
+  { days: 7, label: '7D' },
+  { days: 14, label: '14D' },
+  { days: 30, label: '30D' },
+  { days: 60, label: '60D' },
+  { days: 90, label: '90D' },
+  { days: 3650, label: 'ALL' },
+];
+function rangeLabel(days) {
+  return days >= 3650 ? 'ALL-TIME' : days + '-DAY';
+}
 
-// Glowing progress ring, used for every metric on this page now (2026-08-26,
-// full pivot away from line graphs -- Elo saw the ring built for OTHER
-// MACROS and asked for it everywhere: "I like how the circle looks for
-// other's macro... let's do circles for calories protein and sugar as well,
-// instead of the line graph for sleep, let's do the circle as well, as well
-// as the macro in today's macro let's all use circle against goal"). Exact
-// same technique as HOME's habit "Daily score" ring (HomeTab.js: r=26,
-// circumference = 2*PI*r, rotated -90deg so the fill starts at 12 o'clock,
-// strokeDashoffset driving the fill amount, a glow drop-shadow on the
-// filled arc). `size` scales the ring itself (bigger for SLEEP/the 3
-// priority macros, smaller for the 6-up TODAY grid and the secondary
-// carbs/fat/fiber row) -- the underlying r=26/circumference math stays
-// fixed in the viewBox, only the rendered width/height (and stroke/font
-// scaling with it) change, so the ring never looks stretched at any size.
-// `valueLabel` distinguishes "avg" (range average, used in the NUTRITION
-// trend section) from "today" (used in the TODAY snapshot section) -- same
-// component, different underlying data per Elo's own two use cases.
-function MacroRing({ label, value, goal, unit, color, size = 48, valueLabel = 'avg' }) {
+function formatClockTime(str) {
+  if (!str) return '—';
+  return new Date(str).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+function formatHoursMinutes(h) {
+  if (h == null) return '—';
+  const totalMin = Math.round(h * 60);
+  return Math.floor(totalMin / 60) + 'h ' + (totalMin % 60) + 'm';
+}
+
+// Glowing progress ring, used for every metric on this page (2026-08-26,
+// full pivot away from line graphs -- see the git history for that
+// migration). Rebuilt again the same day against a real design mock Elo
+// dropped in the project folder (a fuller HEALTH layout: a page header, a
+// 4-up "HEALTH OVERVIEW" summary strip, SLEEP's bedtime/wake/consistency
+// stats, and a specific ring text format) -- used "as a recommendation,"
+// per Elo's own framing, so this keeps everything already working (AI
+// INSIGHT, the sleep column in DAY BY DAY, the priority/secondary size
+// split in NUTRITION) and layers the mock's genuinely new ideas on top,
+// rather than a from-scratch replacement.
+// `variant`: 'today' shows "{value} / {goal}{unit}" then "{pct}%" below
+// (used in the TODAY snapshot); 'trend' shows "{value}{unit} avg" then
+// "{goal}{unit} target · {pct}%" below (used in NUTRITION's range
+// averages) -- two different, genuinely useful views of the same ring
+// mechanics rather than one generic label.
+// `isLimit` (sugar only) swaps "target"/"/" phrasing for "of {goal} limit",
+// matching the mock's distinction between a target to hit and a ceiling to
+// stay under.
+// `icon`/`formatValue` cover SLEEP's specific needs: a centered moon emoji
+// (rendered in a separate non-rotated overlay div, since the ring SVG
+// itself is rotated -90deg so the fill starts at 12 o'clock -- an icon
+// drawn inside that SVG would rotate with it) and an "Xh Ym" format instead
+// of a plain rounded number.
+function MacroRing({ label, value, goal, unit, color, size = 48, variant = 'trend', isLimit = false, icon = null, formatValue = null }) {
   const r = 26;
   const circumference = 2 * Math.PI * r;
-  const pct = goal > 0 && value != null ? Math.min(100, Math.round((value / goal) * 100)) : 0;
+  const pct = goal > 0 && value != null ? Math.round((value / goal) * 100) : 0;
+  const fillPct = Math.min(100, Math.max(0, pct));
   const scale = size / 64;
+  const fmt = (v) => (v == null ? '—' : formatValue ? formatValue(v) : Math.round(v).toLocaleString());
+  const fs = (base) => Math.max(Math.round(base * 0.65), Math.round(base * scale)) + 'px';
+
   return (
     <div style={css('display:flex;align-items:center;gap:' + Math.round(12 * Math.max(scale, 0.8)) + 'px;padding:' + Math.round(12 * Math.max(scale, 0.85)) + 'px;border-radius:12px;background:oklch(0.11 0.05 236);border:1px solid oklch(0.28 0.06 232);')}>
-      <svg width={size} height={size} viewBox="0 0 64 64" style={css('flex-shrink:0;transform:rotate(-90deg);')}>
-        <circle cx="32" cy="32" r={r} fill="none" stroke={color.replace(')', ' / 0.22)')} strokeWidth="7" />
-        <circle
-          cx="32" cy="32" r={r} fill="none" stroke={color} strokeWidth="7" strokeLinecap="round"
-          strokeDasharray={circumference.toFixed(2)}
-          strokeDashoffset={(circumference * (1 - pct / 100)).toFixed(2)}
-          style={css('filter:drop-shadow(0 0 5px ' + color.replace(')', ' / 0.55)') + ');transition:stroke-dashoffset 0.4s ease;')}
-        />
-      </svg>
-      <div style={css('flex:1;min-width:0;')}>
-        <div style={css('font-size:' + Math.max(9, Math.round(10.5 * scale)) + 'px;font-weight:700;letter-spacing:0.06em;color:oklch(0.62 0.03 228);margin-bottom:3px;')}>{label}</div>
-        <div style={css('font-size:' + Math.max(13, Math.round(17 * scale)) + 'px;font-weight:800;line-height:1;')}>
-          {value != null ? Math.round(value) : '—'}<span style={css('font-size:' + Math.max(8, Math.round(10 * scale)) + 'px;font-weight:500;color:oklch(0.55 0.025 228);')}> {unit} {valueLabel}</span>
-        </div>
+      <div style={css('position:relative;flex-shrink:0;width:' + size + 'px;height:' + size + 'px;')}>
+        <svg width={size} height={size} viewBox="0 0 64 64" style={css('display:block;transform:rotate(-90deg);')}>
+          <circle cx="32" cy="32" r={r} fill="none" stroke={color.replace(')', ' / 0.22)')} strokeWidth="7" />
+          <circle
+            cx="32" cy="32" r={r} fill="none" stroke={color} strokeWidth="7" strokeLinecap="round"
+            strokeDasharray={circumference.toFixed(2)}
+            strokeDashoffset={(circumference * (1 - fillPct / 100)).toFixed(2)}
+            style={css('filter:drop-shadow(0 0 5px ' + color.replace(')', ' / 0.55)') + ');transition:stroke-dashoffset 0.4s ease;')}
+          />
+        </svg>
+        {icon && (
+          <div style={css('position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:' + Math.round(size * 0.32) + 'px;')}>{icon}</div>
+        )}
       </div>
-      <div style={css('text-align:right;flex-shrink:0;padding-left:' + Math.round(10 * Math.max(scale, 0.8)) + 'px;border-left:1px solid oklch(0.28 0.06 232);')}>
-        <div style={css('font-size:' + Math.max(7, Math.round(8 * scale)) + 'px;font-weight:700;letter-spacing:0.07em;color:oklch(0.5 0.025 228);margin-bottom:2px;')}>GOAL</div>
-        <div style={css('font-size:' + Math.max(11, Math.round(14 * scale)) + 'px;font-weight:800;color:oklch(0.85 0.02 228);')}>{goal}{unit}</div>
+      <div style={css('flex:1;min-width:0;')}>
+        <div style={css('font-size:' + fs(10.5) + ';font-weight:700;letter-spacing:0.06em;color:oklch(0.62 0.03 228);margin-bottom:3px;')}>{label}</div>
+        {variant === 'today' ? (
+          <>
+            <div style={css('font-size:' + fs(17) + ';font-weight:800;line-height:1.25;')}>
+              {isLimit ? (
+                <>{fmt(value)}{unit} <span style={css('font-size:' + fs(11) + ';font-weight:500;color:oklch(0.55 0.025 228);')}>of {fmt(goal)}{unit} limit</span></>
+              ) : (
+                <>{fmt(value)} <span style={css('font-size:' + fs(11) + ';font-weight:500;color:oklch(0.55 0.025 228);')}>/ {fmt(goal)}{unit}</span></>
+              )}
+            </div>
+            <div style={css('font-size:' + fs(9.5) + ';font-weight:600;color:oklch(0.5 0.025 228);margin-top:2px;')}>{pct}%</div>
+          </>
+        ) : (
+          <>
+            <div style={css('font-size:' + fs(17) + ';font-weight:800;line-height:1;')}>
+              {fmt(value)}<span style={css('font-size:' + fs(10) + ';font-weight:500;color:oklch(0.55 0.025 228);')}> {unit} avg</span>
+            </div>
+            <div style={css('display:flex;align-items:baseline;justify-content:space-between;margin-top:3px;gap:8px;')}>
+              <span style={css('font-size:' + fs(9.5) + ';color:oklch(0.5 0.025 228);white-space:nowrap;')}>{fmt(goal)}{unit} {isLimit ? 'limit' : 'target'}</span>
+              <span style={css('font-size:' + fs(9.5) + ';font-weight:700;color:oklch(0.6 0.025 228);')}>{pct}%</span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
+}
+
+// Small icon-in-a-box + label + value, used for the HEALTH OVERVIEW strip
+// at the top of the page (2026-08-26, new -- from the design mock).
+function OverviewStat({ icon, color, label, value }) {
+  return (
+    <div style={css('display:flex;align-items:center;gap:12px;flex:1;min-width:190px;')}>
+      <div style={css('width:42px;height:42px;border-radius:10px;background:' + color.replace(')', ' / 0.15)') + ';border:1px solid ' + color.replace(')', ' / 0.4)') + ';display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;')}>{icon}</div>
+      <div style={css('min-width:0;')}>
+        <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.55 0.025 228);margin-bottom:3px;')}>{label}</div>
+        <div style={css('font-size:15px;font-weight:800;white-space:nowrap;')}>{value}</div>
+      </div>
+    </div>
+  );
+}
+
+// A rough, clearly-heuristic "how's it going overall" rating for the
+// HEALTH OVERVIEW strip -- not a medical assessment, just a quick signal
+// blending whether sleep/calories/habits each look on-track today.
+function overallRating(sleepAvg, sleepGoal, todayKcal, calorieGoal, habitsCompleted, habitsTotal) {
+  let score = 0, total = 0;
+  if (sleepAvg != null) { total++; if (sleepAvg >= sleepGoal - 1) score++; }
+  if (calorieGoal > 0 && todayKcal > 0) { total++; const r = todayKcal / calorieGoal; if (r >= 0.8 && r <= 1.15) score++; }
+  if (habitsTotal > 0) { total++; if (habitsCompleted / habitsTotal >= 0.5) score++; }
+  if (total === 0) return { label: 'No data yet', color: 'oklch(0.5 0.025 228)' };
+  const ratio = score / total;
+  if (ratio >= 0.8) return { label: 'Great', color: 'oklch(0.7 0.18 150)' };
+  if (ratio >= 0.5) return { label: 'Good', color: 'oklch(0.86 0.17 195)' };
+  if (ratio >= 0.25) return { label: 'Fair', color: 'oklch(0.75 0.16 90)' };
+  return { label: 'Needs attention', color: 'oklch(0.68 0.19 25)' };
 }
 
 // The 3 macros Elo said matter most ("the most important macros i care
@@ -58,7 +145,7 @@ function MacroRing({ label, value, goal, unit, color, size = 48, valueLabel = 'a
 const PRIORITY_MACROS = [
   { key: 'kcal', label: 'CALORIES', unit: 'kcal', goalKey: 'calorieGoal', color: 'oklch(0.86 0.17 195)' },
   { key: 'protein', label: 'PROTEIN', unit: 'g', goalKey: 'proteinGoal', color: 'oklch(0.7 0.18 150)' },
-  { key: 'sugar', label: 'SUGAR', unit: 'g', goalKey: 'sugarGoal', color: 'oklch(0.68 0.19 25)' },
+  { key: 'sugar', label: 'SUGAR', unit: 'g', goalKey: 'sugarGoal', color: 'oklch(0.68 0.19 25)', isLimit: true },
 ];
 // General adult reference intake per day, at a 2,000-kcal diet -- the same
 // %DV baseline printed on every US nutrition label (FDA), not personalized
@@ -89,17 +176,17 @@ function MacroPill({ label, value, color }) {
 function RangePicker({ value, onChange }) {
   return (
     <div style={css('display:flex;gap:6px;')}>
-      {RANGE_OPTIONS.map((d) => (
+      {RANGE_OPTIONS.map((opt) => (
         <div
-          key={d}
-          onClick={() => onChange(d)}
+          key={opt.days}
+          onClick={() => onChange(opt.days)}
           style={css(
             'font-size:10px;font-weight:700;letter-spacing:0.03em;padding:5px 10px;border-radius:6px;cursor:pointer;white-space:nowrap;' +
-            (value === d
+            (value === opt.days
               ? 'background:oklch(0.58 0.18 204);color:oklch(0.95 0.02 200);box-shadow:' + GLOW_STRONG + ';'
               : 'background:oklch(0.12 0.06 240);color:oklch(0.55 0.025 228);border:1px solid oklch(0.4 0.08 220);')
           )}
-        >{d}D</div>
+        >{opt.label}</div>
       ))}
     </div>
   );
@@ -109,20 +196,6 @@ function RangePicker({ value, onChange }) {
 // actions live here. Bed/wake clicks and meal logging both live on HOME
 // instead (2026-08-25, at Elo's request: "the health page should be just
 // visual data where I can see and generate insight").
-//
-// Layout (2026-08-26, per Elo's explicit 4-zone spec): top-left = SLEEP,
-// top-right = TODAY'S snapshot (macros vs. goal + health habits, "so I can
-// access it as soon as possible when I enter the health tab"), middle =
-// full nutrient averages, bottom = DAY BY DAY. HEALTH HABITS folded into
-// the top-right zone alongside TODAY'S MACROS (Claude's call, since Elo said
-// "move it somewhere else unless you have a recommendation") -- both are
-// glanceable "right now" stats, so they read naturally as one group, and it
-// keeps top-left purely about sleep.
-//
-// Everything below the AI INSIGHT card is MacroRing now -- the line-graph
-// era of this file (buildSparkline/Sparkline/MetricGraph/TrendBox,
-// MacroBar) is gone entirely, replaced across the board per Elo's request
-// ("let's all use circle against goal so it looks better and cleaner").
 export default function HealthTab({
   healthData, healthDataLoading, healthRangeDays, setHealthRangeDays,
   healthInsightText, healthInsightGenerating, generateHealthInsight,
@@ -130,9 +203,9 @@ export default function HealthTab({
 }) {
   const latestHabitDay = [...healthData].reverse().find((d) => d.health_habits_total > 0);
   const latestDay = healthData.length ? healthData[healthData.length - 1] : null;
+  const latestSleepDay = [...healthData].reverse().find((d) => d.sleep_bed_time || d.sleep_wake_time);
 
-  // Range average, used by NUTRITION's rings and SLEEP's ring -- "average"
-  // specifically, per Elo's own wording ("other macros average").
+  // Range average, used by NUTRITION's rings and the OVERVIEW strip.
   const rangeAvg = (key) => {
     const known = healthData.map((d) => d[key]).filter((v) => v > 0);
     return known.length ? known.reduce((s, v) => s + v, 0) / known.length : null;
@@ -141,9 +214,42 @@ export default function HealthTab({
     const known = healthData.map((d) => d.sleep_hours).filter((v) => v != null);
     return known.length ? known.reduce((s, v) => s + v, 0) / known.length : null;
   })();
+  const sleepConsistencyPct = healthData.length
+    ? Math.round((healthData.filter((d) => d.sleep_hours != null).length / healthData.length) * 100)
+    : 0;
+
+  const todayKcal = latestDay ? latestDay.kcal || 0 : 0;
+  const todayCaloriePct = healthGoals.calorieGoal > 0 ? Math.round((todayKcal / healthGoals.calorieGoal) * 100) : null;
+  const rating = overallRating(
+    sleepAvg, 8, todayKcal, healthGoals.calorieGoal,
+    latestHabitDay ? latestHabitDay.health_habits_completed : 0,
+    latestHabitDay ? latestHabitDay.health_habits_total : 0
+  );
 
   return (
     <div className="elo-scroll" style={css('flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding-right:6px;')}>
+
+      {/* PAGE HEADER (2026-08-26, new -- from the design mock). Plain text,
+          not boxed, matching how BRAIN/JOURNAL's own small tab headers sit
+          directly on the page background rather than in a card. */}
+      <div style={css('display:flex;align-items:center;gap:12px;')}>
+        <div style={css('font-size:24px;')}>💗</div>
+        <div>
+          <div style={css('font-size:19px;font-weight:800;letter-spacing:-0.01em;')}>HEALTH</div>
+          <div style={css('font-size:11.5px;color:oklch(0.55 0.025 228);')}>Your health, optimized.</div>
+        </div>
+      </div>
+
+      {/* HEALTH OVERVIEW -- 4-up glanceable summary strip (2026-08-26, new). */}
+      <div className={CARD_CLASS} style={css(CARD + 'padding:18px 22px;')}>
+        <div style={css('font-size:9.5px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);margin-bottom:14px;')}>HEALTH OVERVIEW</div>
+        <div style={css('display:flex;flex-wrap:wrap;gap:20px;')}>
+          <OverviewStat icon="🌙" color="oklch(0.62 0.2 235)" label="SLEEP" value={formatHoursMinutes(sleepAvg) + ' avg'} />
+          <OverviewStat icon="🍽" color="oklch(0.86 0.17 195)" label="NUTRITION" value={todayCaloriePct != null ? todayCaloriePct + '% of calorie target today' : '—'} />
+          <OverviewStat icon="✅" color="oklch(0.7 0.18 150)" label="HABITS" value={latestHabitDay ? latestHabitDay.health_habits_completed + ' / ' + latestHabitDay.health_habits_total + ' completed' : '—'} />
+          <OverviewStat icon="💗" color={rating.color} label="OVERALL" value={rating.label} />
+        </div>
+      </div>
 
       {/* AI INSIGHT */}
       <div className={CARD_CLASS} style={css(CARD + 'padding:16px;display:flex;flex-direction:column;gap:10px;')}>
@@ -168,14 +274,33 @@ export default function HealthTab({
         <div className={CARD_CLASS} style={css(CARD + 'padding:22px;flex:1 1 380px;min-width:340px;display:flex;flex-direction:column;')}>
           <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;')}>
             <div style={css('font-size:14px;font-weight:800;letter-spacing:0.03em;')}>🌙 SLEEP</div>
-            <div style={css('font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>{healthRangeDays}-DAY AVERAGE</div>
+            <div style={css('font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>{rangeLabel(healthRangeDays)} AVERAGE</div>
           </div>
           {healthDataLoading ? (
             <div style={css('flex:1;display:flex;align-items:center;justify-content:center;color:oklch(0.5 0.025 228);font-size:11.5px;')}>Loading…</div>
           ) : (
-            <div style={css('flex:1;display:flex;align-items:center;')}>
-              <MacroRing label="HOURS SLEPT" value={sleepAvg} goal={8} unit="hrs" color="oklch(0.62 0.2 235)" size={84} />
-            </div>
+            <>
+              <MacroRing label="HOURS SLEPT" value={sleepAvg} goal={8} unit="" color="oklch(0.62 0.2 235)" size={84}
+                icon="🌙" formatValue={formatHoursMinutes} />
+              {/* BEDTIME/WAKE/CONSISTENCY (2026-08-26, new -- needs
+                  sleep_log's bed_time/wake_time, which getHealthContext
+                  didn't select before this pass; lib/context.js updated to
+                  include them alongside the existing hours/quality). */}
+              <div style={css('display:grid;grid-template-columns:repeat(3, 1fr);gap:10px;margin-top:16px;')}>
+                <div>
+                  <div style={css('font-size:9px;font-weight:700;letter-spacing:0.06em;color:oklch(0.5 0.025 228);margin-bottom:4px;')}>🕐 BEDTIME</div>
+                  <div style={css('font-size:13px;font-weight:700;')}>{latestSleepDay ? formatClockTime(latestSleepDay.sleep_bed_time) : '—'}</div>
+                </div>
+                <div>
+                  <div style={css('font-size:9px;font-weight:700;letter-spacing:0.06em;color:oklch(0.5 0.025 228);margin-bottom:4px;')}>☀️ WAKE</div>
+                  <div style={css('font-size:13px;font-weight:700;')}>{latestSleepDay ? formatClockTime(latestSleepDay.sleep_wake_time) : '—'}</div>
+                </div>
+                <div>
+                  <div style={css('font-size:9px;font-weight:700;letter-spacing:0.06em;color:oklch(0.5 0.025 228);margin-bottom:4px;')}>📊 CONSISTENCY</div>
+                  <div style={css('font-size:13px;font-weight:700;')}>{sleepConsistencyPct}%</div>
+                </div>
+              </div>
+            </>
           )}
         </div>
 
@@ -190,12 +315,12 @@ export default function HealthTab({
           </div>
           <div style={css('display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:10px;margin-bottom:18px;')}>
             {PRIORITY_MACROS.map((m) => (
-              <MacroRing key={m.key} label={m.label} unit={m.unit} color={m.color} goal={healthGoals[m.goalKey]}
-                value={latestDay ? latestDay[m.key] || 0 : 0} size={40} valueLabel="today" />
+              <MacroRing key={m.key} label={m.label} unit={m.unit} color={m.color} goal={healthGoals[m.goalKey]} isLimit={m.isLimit}
+                value={latestDay ? latestDay[m.key] || 0 : 0} size={40} variant="today" />
             ))}
             {SECONDARY_MACROS.map((m) => (
               <MacroRing key={m.key} label={m.label} unit={m.unit} color={m.color} goal={m.target}
-                value={latestDay ? latestDay[m.key] || 0 : 0} size={40} valueLabel="today" />
+                value={latestDay ? latestDay[m.key] || 0 : 0} size={40} variant="today" />
             ))}
           </div>
 
@@ -224,11 +349,11 @@ export default function HealthTab({
         </div>
       </div>
 
-      {/* MIDDLE: full nutrient averages, all rings now */}
+      {/* MIDDLE: full nutrient averages */}
       <div className={CARD_CLASS} style={css(CARD + 'padding:22px;')}>
         <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;')}>
           <div style={css('font-size:14px;font-weight:800;letter-spacing:0.03em;')}>🍽 NUTRITION</div>
-          <div style={css('font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>{healthRangeDays}-DAY AVERAGE</div>
+          <div style={css('font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>{rangeLabel(healthRangeDays)} AVERAGE</div>
         </div>
         <div style={css('font-size:9.5px;color:oklch(0.45 0.025 228);margin-bottom:18px;')}>
           Goals are estimates from your physique/workout goals, not medical advice.
@@ -241,7 +366,7 @@ export default function HealthTab({
             <div style={css('color:oklch(0.5 0.025 228);font-size:11.5px;')}>Loading…</div>
           ) : (
             PRIORITY_MACROS.map((m) => (
-              <MacroRing key={m.key} label={m.label} unit={m.unit} color={m.color} goal={healthGoals[m.goalKey]}
+              <MacroRing key={m.key} label={m.label} unit={m.unit} color={m.color} goal={healthGoals[m.goalKey]} isLimit={m.isLimit}
                 value={rangeAvg(m.key)} size={64} />
             ))
           )}

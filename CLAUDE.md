@@ -1215,6 +1215,63 @@ exactly this reason).
   reads nearly full at 27g/28g), and DAY BY DAY unchanged. No new console
   errors beyond the pre-existing `/api/profile` and `/api/health/goals`
   404s.
+- **Seventh follow-up (2026-08-26) -- a real design mock, and a real DST bug
+  it surfaced.** Elo dropped a fully-designed HEALTH mockup in the project
+  root and asked to "mock up the model screenshot and build the health tab
+  layout based on that," then immediately refined the instruction twice:
+  "use the mockup as a recommendation and build off based on what we have
+  and keep what we have as well" (don't replace working features the mock
+  happens to omit, like AI INSIGHT or DAY BY DAY's sleep column), and "also
+  add an all time time range on the top right."
+  New from the mock, layered onto the existing rings/layout rather than
+  replacing it: a plain-text page header (💗 HEALTH / "Your health,
+  optimized.", unboxed like BRAIN/JOURNAL's own small headers); a new
+  "HEALTH OVERVIEW" 4-up summary strip (sleep avg, today's calorie %,
+  today's habit completion, and a heuristic "Great/Good/Fair/Needs
+  attention" `overallRating()` blending all three -- explicitly not a
+  medical assessment, just a quick glance signal); SLEEP gained a centered
+  moon icon (rendered as a separate non-rotated overlay div, since the ring
+  SVG itself is rotated -90deg and an icon drawn inside it would rotate
+  too) and a new BEDTIME/WAKE/CONSISTENCY row, which needed
+  `sleep_log.bed_time`/`wake_time` added to `getHealthContext`'s select
+  (`lib/context.js`) since it only fetched hours/quality before; and
+  `MacroRing` gained a `variant` prop matching the mock's two distinct text
+  layouts exactly (`'today'`: "{value} / {goal}{unit}" then "{pct}%" below;
+  `'trend'`: "{value}{unit} avg" then "{goal}{unit} target · {pct}%" on one
+  row) plus `isLimit` (sugar only, "{value}g of {goal}g limit" instead of a
+  target to hit, matching a detail the mock itself drew this way) and an
+  `icon`/`formatValue` pair for SLEEP's moon and "Xh Ym" formatting.
+  "ALL" range: added as a 6th option on the existing `RangePicker` (already
+  top-right of the AI INSIGHT card, so no new element needed) mapping to
+  3650 days (~10 years -- comfortably "all time" for a dashboard whose real
+  data starts 2026-08-26, simpler than a second backend mode that finds the
+  actual earliest logged date). `getHealthContext`'s own day clamp raised
+  from 90 to 3650 to match.
+  **Real bug found via this new range, not cosmetic:** selecting ALL threw
+  React "two children with the same key" warnings for `DAY BY DAY` rows,
+  naming real dates years apart (2025-11-02, 2024-11-03, ...) as duplicates.
+  Root cause: both `getHealthContext` and (found by grepping for the same
+  pattern) `getCorrelationData` built each day via
+  `new Date(Date.now() - i * 86400000)` -- raw millisecond subtraction,
+  which silently drifts across DST transitions (a "spring forward"/"fall
+  back" day is 23 or 25 real hours, not 24). Invisible at the old 90-day
+  cap since a handful of ~1-hour drifts rarely accumulate into a full day
+  there, but with "now" sitting close to local midnight and a 3650-day
+  range crossing ~20 DST transitions, the drift reliably pushed some dates
+  across a calendar boundary, producing a duplicate date (and, silently, a
+  skipped one elsewhere in the same sequence -- a real data gap, not just a
+  React rendering nitpick). Fixed in both functions by switching to
+  calendar-date arithmetic -- `new Date(y, m, d - i)` using the Date
+  constructor's own local rollover instead of absolute-millisecond math, so
+  it can't drift regardless of how many DST/month/year boundaries the range
+  crosses. Verified the fix is real, not just quieter: fetched
+  `/api/health/data?days=3650` directly and confirmed all 3650 returned
+  dates are unique (`new Set(dates).size === 3650`), spanning exactly
+  2016-08-29 to 2026-08-26; re-checked the console on a fresh tab and
+  confirmed the duplicate-key warnings were gone entirely, not just reduced.
+  Backend restarted twice this pass (`lib/context.js` doesn't hot-reload,
+  same as `server.js`) -- once for the bed_time/wake_time select, once more
+  for the DST fix.
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still
