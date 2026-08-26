@@ -196,6 +196,11 @@ export default function HomeTab(props) {
   } = props;
 
   const photoInputRef = useRef(null);
+  // Flag-based alternative to onMouseDown->preventDefault for the draggable
+  // sub-task box specifically -- see the long comment at its usage site for
+  // why preventDefault can't be used there (it silently breaks dragstart in
+  // Firefox, and inconsistently in Safari).
+  const skipHabitBlurSave = useRef(false);
   const handlePhotoChange = async (e) => {
     const file = e.target.files && e.target.files[0];
     e.target.value = ''; // allow picking the same file again later
@@ -636,7 +641,16 @@ export default function HomeTab(props) {
                       // without this check, tabbing/clicking from the label input
                       // to the category select (both inside this same row) would
                       // blur the input, save, and exit edit mode before the select
-                      // ever got a chance to open.
+                      // ever got a chance to open. skipHabitBlurSave additionally
+                      // covers mousedown on the draggable sub-task box, which
+                      // can't use preventDefault (see that element's own comment)
+                      // and so triggers this same blur through the browser's
+                      // default "blur focus when mousedown lands on a non-
+                      // focusable element" behavior.
+                      if (skipHabitBlurSave.current) {
+                        skipHabitBlurSave.current = false;
+                        return;
+                      }
                       if (editingHabitId === h.id && !e.currentTarget.contains(e.relatedTarget)) {
                         saveEditHabit();
                       }
@@ -693,7 +707,20 @@ export default function HomeTab(props) {
                             <div
                               key={s.id}
                               draggable
-                              onMouseDown={(e) => e.preventDefault()}
+                              // NOT onMouseDown={(e) => e.preventDefault()} here --
+                              // that was the original fix for this box triggering
+                              // a premature save-and-close (mousedown on a non-
+                              // focusable div blurs the row's focused label input
+                              // by default), but preventDefault on mousedown also
+                              // silently suppresses the browser's native dragstart
+                              // on this same element in Firefox (and inconsistently
+                              // in Safari) -- so it fixed the blur bug while
+                              // quietly breaking the actual drag gesture. Fixed
+                              // instead with a flag (skipHabitBlurSave, checked in
+                              // the outer row's onBlur) that suppresses the same
+                              // save-and-close WITHOUT calling preventDefault, so
+                              // native drag-start is never interfered with.
+                              onMouseDown={() => { skipHabitBlurSave.current = true; }}
                               onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', String(s.id)); setDraggingSubtaskId(s.id); }}
                               onDragEnd={(e) => { e.stopPropagation(); setDraggingSubtaskId(null); }}
                               onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}

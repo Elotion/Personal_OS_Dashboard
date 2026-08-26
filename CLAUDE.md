@@ -1130,6 +1130,39 @@ exactly this reason).
      just by re-reading the diff. Still asked Elo to do one real drag himself to
      close the loop, since this session's tooling gap means the full gesture has
      never once been mechanically exercised end-to-end here.
+  5. **Elo reported it STILL didn't work after fix #4** ("I still can't drag the
+     subtask for different order") -- the nested-draggable fix was real and
+     necessary but not sufficient; a second, independent bug was also blocking the
+     drag from ever starting. The sub-task box's `onMouseDown={(e) =>
+     e.preventDefault()}` -- the ORIGINAL fix from item 3 for the premature-blur/
+     jump-out bug -- has a well-documented cross-browser side effect: calling
+     `preventDefault()` on `mousedown` silently suppresses the browser's native
+     `dragstart` from ever firing on that same element in Firefox, and
+     inconsistently in Safari (Chrome is more forgiving, which is likely why this
+     wasn't caught by testing in this session's Chromium-based browser
+     automation). In other words, the item-3 fix traded the jump-out bug for a
+     new one that just didn't show up in this session's own browser. Fixed by
+     replacing `preventDefault()` with a flag instead: a new `skipHabitBlurSave`
+     ref (`useRef(false)`) is set to `true` in the sub-task box's `onMouseDown`
+     (no `preventDefault` call at all this time), and the outer row's `onBlur`
+     checks and consumes that flag before its existing save-and-close logic --
+     same net effect (suppress the premature save when this specific box was
+     clicked) without ever touching the mousedown's default action, so native
+     drag-start is no longer at risk of being suppressed in any browser. The
+     sub-task row's own ✕ delete button keeps its original `preventDefault`
+     unchanged -- it was never draggable itself, so it was never part of this
+     particular conflict, no reason to touch it.
+     **Verification note, still an open loop:** confirmed the panel no longer
+     closes on a plain click (the flag-based blur guard works), and confirmed no
+     new console errors -- but this session's browser automation still cannot
+     dispatch a real, trusted native drag gesture (`left_click_drag` moves the
+     mouse but Chrome doesn't treat it as a genuine drag; scripted
+     `DragEvent`/`DataTransfer` dispatch is restricted on synthetic events for
+     security reasons) -- so even with two real, distinct bugs found and fixed
+     this session, the actual end-to-end drag still has never been mechanically
+     verified inside this environment. If Elo tries again and it's STILL broken,
+     the next thing to ask him for is which browser he's testing in -- that's the
+     one variable this session can't control for or reproduce.
 - **`CARD` (`theme.js`) rebuilt a third time (2026-08-25), this time against a real
   screenshot of the target UI instead of a verbal description.** Elo shared a
   screenshot of the actual reference dashboard and asked for the major-box silhouette
