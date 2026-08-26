@@ -1096,6 +1096,40 @@ exactly this reason).
      still can't be mechanically automated in this session (same tooling limitation
      as before), so a real end-to-end drag is still worth Elo confirming himself, but
      the reported symptom (immediate jump-out) is fixed and re-verified.
+  4. **Real bug Elo hit using it AGAIN, same day, after the jump-out fix above:**
+     "I still can't really drag the subtask within the habits section, it wouldnt
+     drag when I click on edit on the subtask." The jump-out fix (item 3) was real
+     but incomplete -- it stopped the edit panel from closing prematurely, but the
+     actual drag-and-drop still never worked, for a completely different reason:
+     a genuine nested-draggable conflict. The sub-task boxes (`draggable`, inside
+     the edit panel) render INSIDE the outer per-habit row (`key={'manage'+h.id}`
+     in `HomeTab.js`), which itself is UNCONDITIONALLY `draggable` (for the
+     top-level "reorder habits" feature) regardless of whether that habit is
+     currently being edited. Two `draggable=true` elements nested inside each
+     other is a well-known, cross-browser-unreliable HTML5 DnD pattern -- the
+     browser's own hit-testing for "which element is the drag source" often lets
+     the OUTER draggable win the gesture even when the mousedown target is nested
+     deeper, and critically, the sub-task handlers' `e.stopPropagation()` calls
+     (added for exactly this concern originally) do NOT fix it -- stopPropagation
+     only affects React's synthetic bubbling of drag EVENTS after the browser has
+     already picked a drag source, it has no influence over that initial source
+     selection. Fixed by making the outer row's `draggable` conditional:
+     `draggable={editingHabitId !== h.id}` -- while a habit's edit/sub-task panel
+     is open, the outer row simply isn't a drag source at all, so there's no
+     nested-draggable conflict during the exact window sub-task dragging needs to
+     work in. (Reordering the top-level habit itself while its own edit panel is
+     open doesn't make sense anyway, so this loses nothing.) Verified the fix
+     structurally, since real HTML5 drag gestures still can't be triggered by this
+     session's browser automation (`left_click_drag` moves the mouse but doesn't
+     dispatch trusted native drag events -- confirmed yet again: the sub-task order
+     was unchanged after an automated drag attempt): walked the live DOM via
+     `javascript_tool` from a sub-task box up through its ancestors and confirmed
+     the sub-task box itself is `draggable="true"` while its outer habit-row
+     ancestor is now `draggable="false"` during editing -- the actual nested-
+     conflict is structurally gone, confirmed on the real rendered page, not
+     just by re-reading the diff. Still asked Elo to do one real drag himself to
+     close the loop, since this session's tooling gap means the full gesture has
+     never once been mechanically exercised end-to-end here.
 - **`CARD` (`theme.js`) rebuilt a third time (2026-08-25), this time against a real
   screenshot of the target UI instead of a verbal description.** Elo shared a
   screenshot of the actual reference dashboard and asked for the major-box silhouette

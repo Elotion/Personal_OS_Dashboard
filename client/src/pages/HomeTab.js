@@ -622,7 +622,7 @@ export default function HomeTab(props) {
                 {habits.map((h) => (
                   <div
                     key={'manage' + h.id}
-                    draggable
+                    draggable={editingHabitId !== h.id}
                     onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(h.id)); setDraggingHabitId(h.id); }}
                     onDragEnd={() => setDraggingHabitId(null)}
                     onDragOver={(e) => e.preventDefault()}
