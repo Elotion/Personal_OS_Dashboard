@@ -925,6 +925,24 @@ exactly this reason).
     block is gone entirely, not just hidden. Verified live: `+` now renders inline
     with each header label; clicking it opens the input directly beneath the header;
     Escape collapses it again.
+- **HOME's TODAY · KEY TASKS card got small glowing GOLD dots (2026-08-25), Elo's
+  request, refined twice in the same exchange.** First pass: a glowing blue dot on
+  the right of each task row, and the header's "N OPEN" text replaced with N small
+  glowing dots. Elo's immediate correction, twice over: (1) the dots should be
+  smaller/lighter and use the GOALS card's own GOLD accent color, not a separate
+  blue -- "I want the dot to be... the framing, the silhouette of the goal section,
+  I want that color"; (2) the header should show the actual number plus ONE glowing
+  dot next to it, not N separate dots -- "that doesn't work." Landed on: 6px dots at
+  `GOLD` (`oklch(0.86 0.17 195)`) 75% opacity with a soft matching glow, dimming to
+  plain grey (no glow) when a task is done, same visual grammar the row already uses
+  for its done/opacity state; header shows `{openCount}` followed by one such dot.
+  One more correction after that: the per-row dot initially used a guessed
+  `margin-top` to line up with the text block, which read as "a little upward" --
+  replaced with `align-self:center` instead, which centers correctly relative to
+  the row's actual content height regardless of label length, rather than a magic-
+  number offset that only happens to work for one specific case. Verified via
+  `getBoundingClientRect()` on both, not just eyeballing a screenshot: dot center
+  and row center matched to within 0.5px.
 
 ## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
 before it costs him a future fix-cycle, not a response to one specific report.

@@ -344,7 +344,10 @@ export default function HomeTab(props) {
         <div style={css(CARD + 'padding:18px;flex:1;')}>
           <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;')}>
             <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>TODAY · KEY TASKS</div>
-            <div style={css('font-size:10px;font-weight:600;color:oklch(0.5 0.025 228);')}>{openCount} OPEN</div>
+            <div style={css('display:flex;align-items:center;gap:6px;')}>
+              <div style={css('font-size:10px;font-weight:600;color:oklch(0.5 0.025 228);')}>{openCount}</div>
+              <div style={css('width:5px;height:5px;border-radius:50%;flex-shrink:0;background:' + GOLD + ';box-shadow:0 0 5px ' + GOLD.replace(')', ' / 0.7)') + ', 0 0 9px ' + GOLD.replace(')', ' / 0.4)') + ';')} />
+            </div>
           </div>
           <div style={css('display:flex;flex-direction:column;gap:10px;')}>
             {keyTasks.map((t) => (
@@ -372,10 +375,15 @@ export default function HomeTab(props) {
                     ';flex-shrink:0;margin-top:1px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;transition:box-shadow 0.3s ease;'
                   )}
                 >{t.done ? '✓' : ''}</div>
-                <div>
+                <div style={css('flex:1;min-width:0;')}>
                   <div style={css('font-size:12.5px;font-weight:500;line-height:1.35;' + (t.done ? 'color:oklch(0.5 0.025 228);text-decoration:line-through;' : ''))}>{t.label}</div>
                   <div style={css('font-size:9.5px;font-weight:600;letter-spacing:0.06em;color:oklch(0.55 0.025 228);margin-top:2px;')}>{t.entity}</div>
                 </div>
+                <div style={css(
+                  'width:6px;height:6px;border-radius:50%;flex-shrink:0;align-self:center;background:' +
+                  (t.done ? 'oklch(0.4 0.025 228)' : GOLD.replace(')', ' / 0.75)')) + ';' +
+                  (t.done ? '' : 'box-shadow:0 0 5px ' + GOLD.replace(')', ' / 0.6)') + ', 0 0 9px ' + GOLD.replace(')', ' / 0.35)') + ';')
+                )} />
               </div>
             ))}
           </div>
