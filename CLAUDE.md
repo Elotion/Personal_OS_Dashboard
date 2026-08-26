@@ -1141,6 +1141,45 @@ exactly this reason).
   the `get_page_text` one three follow-ups up, applied to a different
   verification problem. Confirmed no new console errors and no regression
   on HOME (FINANCE PULSE itself untouched, just read for reference).
+  **Fifth follow-up (2026-08-26) -- real x/y axes, dashed goal line on SLEEP
+  too, and OTHER MACROS became glowing rings.** Three more refinements to
+  the fourth-follow-up layout:
+  1. CALORIES/PROTEIN/SUGAR (and now SLEEP) gained an actual x/y axis, not
+     just the FINANCE PULSE-style line+area: a faint baseline plus right-
+     aligned y-axis labels (`max` at the top, `0` at the bottom -- deliberately
+     opposite side from GOAL/AVG's left-aligned labels so they never
+     collide) drawn inside the SVG, and an x-axis date range (oldest ...
+     newest, e.g. "8/12 ... 8/26") rendered as plain HTML below the SVG
+     rather than fought into the viewBox's coordinate math.
+  2. SLEEP gets the same dashed-GOAL-line treatment as the 3 priority
+     macros now, not just its own AVG/GOAL stat box -- `MetricGraph`'s
+     `refLines` logic changed so the GOAL line shows whenever a `goal` prop
+     is passed, independent of `showRefLines` (which now controls only the
+     heavier AVG line). SLEEP's goal defaults to a general 8-hour reference,
+     same as before.
+  3. OTHER MACROS (carbs/fat/fiber) replaced entirely -- Elo: "I want other
+     macros average to be like habits section glowing circle that shows how
+     close it get's to the goal, and on the right side of the circle shows
+     goal amounts." New `MacroRing` component copies HOME's habit "Daily
+     score" ring exactly (`HomeTab.js`: r=26 circle, `circumference = 2*PI*r`,
+     rotated -90deg so the fill starts at 12 o'clock, `strokeDashoffset`
+     driving the fill, a glow drop-shadow on the filled arc) -- fill
+     percentage is the RANGE AVERAGE against goal (not today's single value,
+     matching Elo's own wording "other macros average"), with the goal
+     number in its own block to the right of the ring. This fully replaced
+     the small line-graph boxes from the previous pass, which also made the
+     now-unused `compact` prop on `MetricGraph`/`TrendBox`/`MacroBar` dead
+     code -- removed rather than left in place per this project's standing
+     "delete dead code, don't leave unused flags" convention.
+  Verified live: full-page screenshot confirmed dashed GOAL lines, y-axis
+  labels, and x-axis date ranges rendering on all 4 graphs, and all 3
+  MacroRing circles filling to the correct percentage (fiber's ring reads
+  nearly full at 27g avg / 28g goal, carbs/fat visibly less full at their
+  own ratios) with the right-side goal numbers legible. No new console
+  errors beyond the pre-existing `/api/profile` and `/api/health/goals`
+  404s. Close-up zoom verification hit the same screenshot-tool zoom+scroll
+  quirk noted in the fourth follow-up -- relied on the full-page screenshot
+  instead, which was sufficient to confirm correctness.
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still
