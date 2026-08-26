@@ -12,5 +12,11 @@ client/build/
 # macOS
 .DS_Store
 
+# Reference/design screenshots Elo drops in the project root for Claude to
+# analyze (e.g. UI mockups to pixel-sample) -- not project code, shouldn't
+# be committed
+*.png
+!client/public/*.png
+
 # Personal Claude Code permission overrides (not shared/team config)
 .claude/settings.local.json

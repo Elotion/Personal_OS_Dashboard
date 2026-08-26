@@ -1241,6 +1241,39 @@ exactly this reason).
   one on the same feature, the later one wins. Verified live across HOME and BRAIN --
   visibly matches the reference crop's vibrant top-down wash, fading to the ordinary
   dark card color by mid-box, with GOALS correctly untouched (separate style).
+- **Third same-day follow-up: that interior glow still wasn't right, and this is
+  the one where "compare the two screenshots directly" actually mattered.** Elo:
+  "the blue color is very different... it's not really glowing blue, it's just
+  plain blue, and it's too much shade all the way down to the center of the box."
+  Comparing a live app screenshot against the reference crops side by side (at 3x
+  browser zoom via `document.body.style.zoom`, to see the OPERATOR box's top region
+  in real detail) confirmed he was right, and pinned down two distinct, separate
+  problems with the previous attempt:
+  1. **Reach.** The gradient had been fit to match the reference's raw measured
+     brightness curve, which technically doesn't flatten out until ~48-50% down --
+     but a plain alpha-blended color stays visually perceptible at far lower alphas
+     than the raw brightness numbers implied, so matching that curve exactly still
+     read as "shade reaching too far down" once actually rendered and looked at.
+     Confirmed directly: at 3x zoom, the "PHOTO / Elo / UCLA" row -- which is
+     basically pure black in the reference -- still carried a visible blue cast.
+     Tightened from fading out at 50% down to fully transparent by 13%.
+  2. **Quality.** Plain CSS alpha-blending a bright color onto a dark background
+     produces a darker, desaturated version of that color -- it reads as tinted
+     paint, not light, which is exactly Elo's "not really glowing, just plain
+     blue." Added `background-blend-mode: screen` to this layer (paired with
+     `normal` for the solid base layer beneath it) -- `screen` composites the way
+     overlapping LIGHT behaves rather than overlapping paint, so the same peak
+     color reads as noticeably more luminous/"lit" instead of just darker-and-
+     tinted.
+  Also worth remembering: the base "floor" color (the plain card background with
+  no glow at all) was independently verified to already closely match the
+  reference -- rendered `oklch(0.145 0.055 240)` to an actual canvas via
+  `ctx.fillStyle` + `getImageData` and got `rgb(0,11,30)`, versus the reference's
+  measured floor of roughly `rgb(0,8,26)`. So the floor color was never the
+  problem; isolating that early (instead of re-tuning a value that was already
+  correct) kept the fix targeted at the two things that actually were wrong.
+  Verified live at 3x zoom (close, matches the reference's tight top-only flash)
+  and at normal scale across HOME and BRAIN (no longer reads as a flat blue wash).
 
 ## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
 before it costs him a future fix-cycle, not a response to one specific report.

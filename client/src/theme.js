@@ -38,29 +38,36 @@ export const GLOW_STRONG =
 // -- every CARD consumer must add `className={CARD_CLASS}` alongside this
 // style string for the border ring to actually render.
 //
-// The interior fill IS part of this inline string, and it was rebuilt
-// (2026-08-25, same pixel-sampling pass as the border ring) after Elo
-// pointed out the reference has a second, separate effect beyond the thin
-// border line: "a little glow... glowing lights going under, like inside
-// the box... very vibrant glow on the top... stringy blue going downward
-// ... they don't have it anywhere on the side or at the bottom." That's a
-// real, distinct thing from the border ring -- a genuinely bright cyan wash
-// bleeding down from the TOP EDGE into the box interior, fully faded to the
-// plain dark base color by roughly halfway down, with no equivalent glow
-// bleeding in from the sides or bottom. Measured directly (median pixel
-// brightness across rows at increasing depth into the OPERATOR box,
-// filtered to ignore text/icons): interior brightness starts near the
-// border's own peak color right at the top edge, decays fast through the
-// first ~20% of the box height, and is fully flat at the dark floor color
-// by ~48-50% -- the multi-stop gradient below is a direct fit to that
-// measured curve, layered as a fading-to-transparent overlay on top of the
-// plain base card color (so below ~50% height it's pixel-identical to the
-// old flat background, and the glow is purely additive above that).
+// The interior fill IS part of this inline string. First attempt
+// (2026-08-25) fit a gradient directly to median-row-brightness pixel
+// samples from the reference image, fading to transparent by ~50% height --
+// but Elo looked at the two side by side and called it out immediately:
+// "the blue color is very different... it's not really glowing blue, it's
+// just plain blue, and it's too much shade all the way down to the center
+// of the box, which is not what I want." Two real, separate problems with
+// that first attempt, diagnosed by comparing a live screenshot against the
+// reference crops directly:
+//   1. Reach: fading to transparent at 50% is genuinely where the
+//      reference's brightness curve flattens out, but the visual EFFECT of
+//      a normal alpha-blended overlay stays perceptible at much lower
+//      alphas than the raw brightness numbers suggested -- so matching the
+//      measured curve exactly still read as "shade reaching too far down."
+//      Tightened to fully transparent by ~22% instead of ~50%.
+//   2. Quality: plain alpha-blending a color onto a dark background just
+//      produces a darker, desaturated version of that color -- it reads as
+//      tinted paint, not light. A real glow needs to look additive/
+//      luminous. Fixed with `background-blend-mode: screen` on this layer,
+//      which composites it against the base color the way overlapping
+//      light (not overlapping paint) behaves -- same peak color reads
+//      noticeably more vibrant/"lit" at the same alpha.
+// Border ring is unaffected by this -- that's still the pixel-measured
+// `.elo-panel-glow::before`/`::after` treatment in index.css.
 export const CARD_CLASS = 'elo-panel-glow';
 
 export const CARD =
   'position:relative;background:' +
-  'linear-gradient(to bottom, rgba(80,172,228,0.85) 0%, rgba(20,80,130,0.55) 6%, ' +
-  'rgba(7,48,90,0.32) 16%, rgba(3,26,56,0.16) 32%, rgba(0,10,28,0) 50%), ' +
+  'linear-gradient(to bottom, rgba(90,195,255,0.85) 0%, rgba(40,150,210,0.3) 3%, ' +
+  'rgba(15,80,130,0.08) 7%, rgba(0,0,0,0) 13%), ' +
   'oklch(0.145 0.055 240);' +
+  'background-blend-mode:screen,normal;' +
   'border:1px solid transparent;border-radius:14px;';
