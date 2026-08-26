@@ -1,6 +1,6 @@
 import React from 'react';
 import { css } from '../css';
-import { GLOW_MED, GOLD } from '../theme';
+import { GOLD, CARD } from '../theme';
 
 export default function BrainTab({ brainEntities, activeTasks, brainFilter, setBrainFilter, openEntityDetail }) {
   const decorated = brainEntities.map((en) => {
@@ -55,7 +55,7 @@ export default function BrainTab({ brainEntities, activeTasks, brainFilter, setB
             key={en.id}
             className="elo-entity-card"
             onClick={() => openEntityDetail(en.id)}
-            style={css('background:oklch(0.16 0.075 238);border:1px solid oklch(0.58 0.18 204);border-radius:16px;padding:24px;cursor:pointer;transition:border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;box-shadow:' + GLOW_MED + ';display:flex;flex-direction:column;')}
+            style={css(CARD + 'padding:24px;cursor:pointer;transition:border-color 0.15s ease, transform 0.15s ease;display:flex;flex-direction:column;')}
           >
             <div style={css('display:flex;align-items:center;gap:12px;margin-bottom:12px;')}>
               <div style={css('font-size:26px;')}>{en.icon}</div>

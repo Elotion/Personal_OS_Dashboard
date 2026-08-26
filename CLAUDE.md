@@ -1079,6 +1079,65 @@ exactly this reason).
      already-working top-level habit drag pattern structurally. Flagged to Elo as a
      real gap in verification (not claimed as fully tested) -- worth a real drag test
      on his end before relying on it.
+  3. **Real bug Elo hit using it, same day:** "The drag button doesn't work, when I
+     click on the drag 6 dots button it would immediately jump out of the edit
+     section" -- exactly the verification gap flagged above turned out to hide a real
+     bug. Root cause: the same premature-blur pattern already fixed once for the
+     +/add and ✕/delete sub-task buttons (see the `habit_subtasks` RESOLVED note in
+     the schema section) also applied to the draggable sub-task box itself -- it's a
+     plain, non-focusable `div`, so a mousedown on it (which is what starts a native
+     drag) shifted focus away from the sub-task label `<input>`, tripping the row's
+     onBlur-triggered save-and-close guard before the drag could ever begin. The fix
+     had only been applied to the small buttons inside each box, not the box you
+     actually grab. Fixed with the same `onMouseDown={(e) => e.preventDefault()}`
+     technique, applied to the draggable box itself (`HomeTab.js`). Verified directly
+     that this specific failure is gone: clicked the drag handle and confirmed the
+     edit panel stays open instead of closing -- the underlying full drag gesture
+     still can't be mechanically automated in this session (same tooling limitation
+     as before), so a real end-to-end drag is still worth Elo confirming himself, but
+     the reported symptom (immediate jump-out) is fixed and re-verified.
+- **`CARD` (`theme.js`) rebuilt a third time (2026-08-25), this time against a real
+  screenshot of the target UI instead of a verbal description.** Elo shared a
+  screenshot of the actual reference dashboard and asked for the major-box silhouette
+  to be copied closely, then gave two corrections in the same exchange once he saw
+  the first attempt live:
+  1. First rebuild read the screenshot as mostly an interior effect -- a lighter
+     blue-navy wash at the top of each box fading down to the page's dark background,
+     with a fairly restrained border and no real outer bloom. Applied as a vertical
+     `linear-gradient` background plus a dialed-back (less neon than the prior pass)
+     border, corner radius opened back up slightly (12px -> 14px).
+  2. Elo: "notice how the glow is more vibrant on the top of the boxes, and lose it's
+     vibrancy towards the bottom" -- then, after seeing that applied to the interior
+     fill, the sharper correction: "it is more of the of a s[i]lhouette of the line
+     glows then the interior of the box glow." The directional fade belongs to the
+     glowing OUTLINE itself, not the box's fill. Rebuilt again: the interior gradient
+     was toned down to a faint assist (so the panel doesn't read flat, but isn't the
+     main effect), and the outer glow became the deliberately asymmetric part -- two
+     box-shadow layers, a small-blur/brighter one with a slight negative y-offset
+     concentrated at the top edge, and a wider-blur/much-dimmer one with a positive
+     y-offset that reads as falloff toward the bottom, plus a bright inset top edge
+     line vs. a dark inset bottom edge line reinforcing the same direction on the
+     border's own bevel. Box-shadow (not `border-image`) was used deliberately so the
+     glow still follows the box's rounded corners -- `border-image` ignores
+     `border-radius` entirely, which would have squared off every corner.
+  Also fixed while doing this pass: three "major boxes" that were still hardcoded
+  near-duplicates of the OLD `CARD` style instead of importing the shared constant
+  (meaning they'd silently drift out of sync with any future `CARD` tuning) --
+  HOME's CALENDAR card, CRM's CATEGORY-view group boxes, and BRAIN's entity dashboard
+  cards (`.elo-entity-card` in `index.css` also had its own hardcoded `:hover` glow,
+  updated to match the new restrained/directional look instead of the old wide
+  neon bloom). All three now render from `CARD` directly, so this and any future
+  "apply it everywhere" pass only has to touch the one constant.
+  Verified live across every tab (HOME, CRM both Kanban and Category views, BRAIN,
+  JOURNAL, HEALTH) -- consistent silhouette everywhere `CARD` is used, GOALS
+  correctly untouched (it deliberately keeps its own separate gold-accented style,
+  per the earlier "pop the goals section" request), no new console errors introduced
+  (the only console errors present are the pre-existing, already-documented
+  `GET /api/profile` 404 from the pending `profile` table migration, unrelated to
+  this change). Exact color values throughout are a best-effort visual match to the
+  reference screenshot and Elo's verbal corrections, not a pixel sample -- flagged as
+  something to iterate on further if it's still not close enough once Elo looks at it
+  himself.
 
 ## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
 before it costs him a future fix-cycle, not a response to one specific report.

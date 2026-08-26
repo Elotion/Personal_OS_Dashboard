@@ -693,6 +693,7 @@ export default function HomeTab(props) {
                             <div
                               key={s.id}
                               draggable
+                              onMouseDown={(e) => e.preventDefault()}
                               onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', String(s.id)); setDraggingSubtaskId(s.id); }}
                               onDragEnd={(e) => { e.stopPropagation(); setDraggingSubtaskId(null); }}
                               onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -742,8 +743,10 @@ export default function HomeTab(props) {
           )}
         </div>
 
-        {/* CALENDAR */}
-        <div style={css('border:1.5px solid oklch(0.86 0.17 195 / 0.45);border-radius:14px;padding:20px;background:oklch(0.16 0.075 238);box-shadow:0 0 14px oklch(0.8 0.19 200 / 0.06), 0 0 28px oklch(0.62 0.2 235 / 0.035), inset 1px 1px 0 oklch(0.95 0.02 200 / 0.07), inset -1px -1px 0 oklch(0.05 0 0 / 0.3);flex:1;display:flex;flex-direction:column;min-height:0;')}>
+        {/* CALENDAR -- uses the shared CARD silhouette now instead of its
+            own near-duplicate custom style, so it stays in sync with the
+            rest of the "major boxes" automatically. */}
+        <div style={css(CARD + 'padding:20px;flex:1;display:flex;flex-direction:column;min-height:0;')}>
           <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-shrink:0;')}>
             <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>CALENDAR</div>
             <div style={css('display:flex;align-items:center;gap:10px;')}>

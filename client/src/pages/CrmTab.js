@@ -1,6 +1,6 @@
 import React from 'react';
 import { css } from '../css';
-import { ENTITY_META, ENTITY_OPTIONS, TF_COLOR, TF_ORDER, GLOW_STRONG, GOLD } from '../theme';
+import { ENTITY_META, ENTITY_OPTIONS, TF_COLOR, TF_ORDER, GLOW_STRONG, GOLD, CARD } from '../theme';
 
 function CategoryPicker({ task, setTaskCategory }) {
   if (!task.pickerOpen) return null;
@@ -238,7 +238,7 @@ export default function CrmTab(props) {
         {crmView === 'CATEGORY' && (
           <div style={css('display:flex;flex-direction:column;gap:20px;')}>
             {categoryGroups.map((grp) => (
-              <div key={grp.name} style={css('background:oklch(0.16 0.075 238);border:1px solid oklch(0.58 0.18 204);border-radius:14px;padding:16px 18px;box-shadow:0 0 14px oklch(0.8 0.19 200 / 0.06), 0 0 28px oklch(0.62 0.2 235 / 0.035), inset 1px 1px 0 oklch(0.95 0.02 200 / 0.07), inset -1px -1px 0 oklch(0.05 0 0 / 0.3);')}>
+              <div key={grp.name} style={css(CARD + 'padding:16px 18px;')}>
                 <div style={css('display:flex;align-items:center;gap:10px;margin-bottom:10px;')}>
                   <span style={css('font-size:18px;')}>{grp.icon}</span>
                   <span style={css('font-size:13px;font-weight:700;')}>{grp.name}</span>
