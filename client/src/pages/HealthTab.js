@@ -291,17 +291,28 @@ export default function HealthTab({
             <div style={css('font-size:14px;font-weight:800;letter-spacing:0.03em;')}>📋 TODAY</div>
             <div style={css('font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>vs. your goals</div>
           </div>
-          <div style={css('font-size:9px;color:oklch(0.45 0.025 228);margin-bottom:16px;')}>
-            Calories/protein/sugar vs. your personal goal · carbs/fat/fiber vs. general reference
-          </div>
-          <div style={css('display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:10px;margin-bottom:18px;')}>
-            {PRIORITY_MACROS.map((m) => (
+          {/* CALORIES/PROTEIN get their own bigger row -- the two Elo singled
+              out ("especially calories and protein macros") -- SUGAR moves
+              down to join CARBS/FAT/FIBER on a smaller second row instead of
+              sitting with CALORIES/PROTEIN like it does in the NUTRITION
+              section below (that split is unchanged; this one is specific
+              to TODAY's snapshot). The old "Calories/protein/sugar vs...
+              carbs/fat/fiber vs..." caption is gone outright, not shortened
+              -- Elo: "get rid of the description." */}
+          <div style={css('display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:10px;margin-bottom:10px;')}>
+            {PRIORITY_MACROS.filter((m) => m.key !== 'sugar').map((m) => (
               <MacroRing key={m.key} label={m.label} unit={m.unit} color={m.color} goal={healthGoals[m.goalKey]} isLimit={m.isLimit}
-                value={latestDay ? latestDay[m.key] || 0 : 0} size={40} />
+                value={latestDay ? latestDay[m.key] || 0 : 0} size={56} />
+            ))}
+          </div>
+          <div style={css('display:grid;grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));gap:8px;margin-bottom:18px;')}>
+            {PRIORITY_MACROS.filter((m) => m.key === 'sugar').map((m) => (
+              <MacroRing key={m.key} label={m.label} unit={m.unit} color={m.color} goal={healthGoals[m.goalKey]} isLimit={m.isLimit}
+                value={latestDay ? latestDay[m.key] || 0 : 0} size={36} />
             ))}
             {SECONDARY_MACROS.map((m) => (
               <MacroRing key={m.key} label={m.label} unit={m.unit} color={m.color} goal={m.target}
-                value={latestDay ? latestDay[m.key] || 0 : 0} size={40} />
+                value={latestDay ? latestDay[m.key] || 0 : 0} size={36} />
             ))}
           </div>
 

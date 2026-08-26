@@ -119,6 +119,22 @@ file) -- resolved by widening the viewport height instead of scrolling, and cros
 checked against `get_page_text` and direct `getBoundingClientRect()` calls the
 whole time, so this was a tooling artifact, not a real layout bug.
 
+## Latest HEALTH tab follow-up (2026-08-26) -- TODAY section hierarchy
+Same-day follow-up to the HEALTH refinement above. Elo: drop TODAY's caption text
+("Calories/protein/sugar vs. your personal goal · carbs/fat/fiber vs. general
+reference"); make CALORIES and PROTEIN's rings bigger; move SUGAR down to sit with
+CARBS/FAT/FIBER on a smaller second row instead of alongside CALORIES/PROTEIN.
+
+`HealthTab.js`'s TODAY section: caption `<div>` removed outright. The single
+6-ring grid split into two -- row 1 is `PRIORITY_MACROS` minus sugar (CALORIES,
+PROTEIN) at `size={56}` (up from 40), row 2 is sugar plus all of `SECONDARY_MACROS`
+(SUGAR, CARBS, FAT, FIBER) at `size={36}`. This is deliberately scoped to TODAY
+only -- NUTRITION's own priority/secondary split (CALORIES/PROTEIN/SUGAR big,
+CARBS/FAT/FIBER small) further down the page is unrelated and untouched; TODAY's
+grouping is now different on purpose (just the two macros Elo singled out get the
+bigger treatment here, not all three "priority" macros). Verified live: no caption
+text, CALORIES/PROTEIN visibly larger than the other four, no console errors.
+
 ## Latest UI/UX refinements (2026-08-26) -- full audit and refinement pass
 Elo asked for a systematic UI/UX + backend-frontend interaction audit across HOME, CRM,
 BRAIN, and JOURNAL -- a debug-and-fix pass, not a new-feature pass. Went through every
