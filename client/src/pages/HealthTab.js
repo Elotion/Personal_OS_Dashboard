@@ -31,30 +31,26 @@ function formatHoursMinutes(h) {
   return Math.floor(totalMin / 60) + 'h ' + (totalMin % 60) + 'm';
 }
 
-// Glowing progress ring, used for every metric on this page (2026-08-26,
-// full pivot away from line graphs -- see the git history for that
-// migration). Rebuilt again the same day against a real design mock Elo
-// dropped in the project folder (a fuller HEALTH layout: a page header, a
-// 4-up "HEALTH OVERVIEW" summary strip, SLEEP's bedtime/wake/consistency
-// stats, and a specific ring text format) -- used "as a recommendation,"
-// per Elo's own framing, so this keeps everything already working (AI
-// INSIGHT, the sleep column in DAY BY DAY, the priority/secondary size
-// split in NUTRITION) and layers the mock's genuinely new ideas on top,
-// rather than a from-scratch replacement.
-// `variant`: 'today' shows "{value} / {goal}{unit}" then "{pct}%" below
-// (used in the TODAY snapshot); 'trend' shows "{value}{unit} avg" then
-// "{goal}{unit} target · {pct}%" below (used in NUTRITION's range
-// averages) -- two different, genuinely useful views of the same ring
-// mechanics rather than one generic label.
-// `isLimit` (sugar only) swaps "target"/"/" phrasing for "of {goal} limit",
-// matching the mock's distinction between a target to hit and a ceiling to
-// stay under.
+// Glowing progress ring, used for every metric on this page. Rebuilt
+// 2026-08-26 (again) at Elo's request to read more clearly at a glance:
+// the fill percentage now renders INSIDE the ring itself (where an icon
+// isn't already using that space) instead of as small text off to the
+// side, and the value/target pairing is one big "{value} / {goal}{unit}"
+// number instead of a smaller number with the target buried in a separate
+// line below -- both were previously easy to miss.
+// `isLimit` (sugar only) swaps the "/" pairing for "of {goal} limit"
+// phrasing, matching the distinction between a target to hit and a
+// ceiling to stay under.
 // `icon`/`formatValue` cover SLEEP's specific needs: a centered moon emoji
 // (rendered in a separate non-rotated overlay div, since the ring SVG
 // itself is rotated -90deg so the fill starts at 12 o'clock -- an icon
 // drawn inside that SVG would rotate with it) and an "Xh Ym" format instead
-// of a plain rounded number.
-function MacroRing({ label, value, goal, unit, color, size = 48, variant = 'trend', isLimit = false, icon = null, formatValue = null }) {
+// of a plain rounded number. Since the icon occupies the ring's own center,
+// SLEEP can't also show its percentage inside the ring -- that case keeps
+// a percentage readout next to the value instead, sized deliberately large
+// per Elo's explicit ask ("make the percentages in the sleep section a lot
+// bigger").
+function MacroRing({ label, value, goal, unit, color, size = 48, isLimit = false, icon = null, formatValue = null }) {
   const r = 26;
   const circumference = 2 * Math.PI * r;
   const pct = goal > 0 && value != null ? Math.round((value / goal) * 100) : 0;
@@ -62,6 +58,7 @@ function MacroRing({ label, value, goal, unit, color, size = 48, variant = 'tren
   const scale = size / 64;
   const fmt = (v) => (v == null ? '—' : formatValue ? formatValue(v) : Math.round(v).toLocaleString());
   const fs = (base) => Math.max(Math.round(base * 0.65), Math.round(base * scale)) + 'px';
+  const pctInRingSize = Math.max(9, Math.round(size * 0.24)) + 'px';
 
   return (
     <div style={css('display:flex;align-items:center;gap:' + Math.round(12 * Math.max(scale, 0.8)) + 'px;padding:' + Math.round(12 * Math.max(scale, 0.85)) + 'px;border-radius:12px;background:oklch(0.11 0.05 236);border:1px solid oklch(0.28 0.06 232);')}>
@@ -75,33 +72,23 @@ function MacroRing({ label, value, goal, unit, color, size = 48, variant = 'tren
             style={css('filter:drop-shadow(0 0 5px ' + color.replace(')', ' / 0.55)') + ');transition:stroke-dashoffset 0.4s ease;')}
           />
         </svg>
-        {icon && (
+        {icon ? (
           <div style={css('position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:' + Math.round(size * 0.32) + 'px;')}>{icon}</div>
+        ) : (
+          <div style={css('position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:' + pctInRingSize + ';font-weight:800;color:' + color + ';')}>{pct}%</div>
         )}
       </div>
       <div style={css('flex:1;min-width:0;')}>
-        <div style={css('font-size:' + fs(10.5) + ';font-weight:700;letter-spacing:0.06em;color:oklch(0.62 0.03 228);margin-bottom:3px;')}>{label}</div>
-        {variant === 'today' ? (
-          <>
-            <div style={css('font-size:' + fs(17) + ';font-weight:800;line-height:1.25;')}>
-              {isLimit ? (
-                <>{fmt(value)}{unit} <span style={css('font-size:' + fs(11) + ';font-weight:500;color:oklch(0.55 0.025 228);')}>of {fmt(goal)}{unit} limit</span></>
-              ) : (
-                <>{fmt(value)} <span style={css('font-size:' + fs(11) + ';font-weight:500;color:oklch(0.55 0.025 228);')}>/ {fmt(goal)}{unit}</span></>
-              )}
-            </div>
-            <div style={css('font-size:' + fs(9.5) + ';font-weight:600;color:oklch(0.5 0.025 228);margin-top:2px;')}>{pct}%</div>
-          </>
-        ) : (
-          <>
-            <div style={css('font-size:' + fs(17) + ';font-weight:800;line-height:1;')}>
-              {fmt(value)}<span style={css('font-size:' + fs(10) + ';font-weight:500;color:oklch(0.55 0.025 228);')}> {unit} avg</span>
-            </div>
-            <div style={css('display:flex;align-items:baseline;justify-content:space-between;margin-top:3px;gap:8px;')}>
-              <span style={css('font-size:' + fs(9.5) + ';color:oklch(0.5 0.025 228);white-space:nowrap;')}>{fmt(goal)}{unit} {isLimit ? 'limit' : 'target'}</span>
-              <span style={css('font-size:' + fs(9.5) + ';font-weight:700;color:oklch(0.6 0.025 228);')}>{pct}%</span>
-            </div>
-          </>
+        <div style={css('font-size:' + fs(10.5) + ';font-weight:700;letter-spacing:0.06em;color:oklch(0.62 0.03 228);margin-bottom:4px;')}>{label}</div>
+        <div style={css('font-size:' + fs(22) + ';font-weight:800;line-height:1.15;white-space:nowrap;')}>
+          {isLimit ? (
+            <>{fmt(value)}<span style={css('font-size:' + fs(13) + ';font-weight:600;color:oklch(0.55 0.025 228);')}> of {fmt(goal)}{unit} limit</span></>
+          ) : (
+            <>{fmt(value)}<span style={css('font-size:' + fs(13) + ';font-weight:600;color:oklch(0.55 0.025 228);')}> / {fmt(goal)}{unit}</span></>
+          )}
+        </div>
+        {icon && (
+          <div style={css('font-size:' + fs(15) + ';font-weight:700;color:' + color + ';margin-top:4px;')}>{pct}%</div>
         )}
       </div>
     </div>
@@ -229,29 +216,12 @@ export default function HealthTab({
   return (
     <div className="elo-scroll" style={css('flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding-right:6px;')}>
 
-      {/* PAGE HEADER (2026-08-26, new -- from the design mock). Plain text,
-          not boxed, matching how BRAIN/JOURNAL's own small tab headers sit
-          directly on the page background rather than in a card. */}
-      <div style={css('display:flex;align-items:center;gap:12px;')}>
-        <div style={css('font-size:24px;')}>💗</div>
-        <div>
-          <div style={css('font-size:19px;font-weight:800;letter-spacing:-0.01em;')}>HEALTH</div>
-          <div style={css('font-size:11.5px;color:oklch(0.55 0.025 228);')}>Your health, optimized.</div>
-        </div>
-      </div>
-
-      {/* HEALTH OVERVIEW -- 4-up glanceable summary strip (2026-08-26, new). */}
-      <div className={CARD_CLASS} style={css(CARD + 'padding:18px 22px;')}>
-        <div style={css('font-size:9.5px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);margin-bottom:14px;')}>HEALTH OVERVIEW</div>
-        <div style={css('display:flex;flex-wrap:wrap;gap:20px;')}>
-          <OverviewStat icon="🌙" color="oklch(0.62 0.2 235)" label="SLEEP" value={formatHoursMinutes(sleepAvg) + ' avg'} />
-          <OverviewStat icon="🍽" color="oklch(0.86 0.17 195)" label="NUTRITION" value={todayCaloriePct != null ? todayCaloriePct + '% of calorie target today' : '—'} />
-          <OverviewStat icon="✅" color="oklch(0.7 0.18 150)" label="HABITS" value={latestHabitDay ? latestHabitDay.health_habits_completed + ' / ' + latestHabitDay.health_habits_total + ' completed' : '—'} />
-          <OverviewStat icon="💗" color={rating.color} label="OVERALL" value={rating.label} />
-        </div>
-      </div>
-
-      {/* AI INSIGHT */}
+      {/* AI INSIGHT -- moved above HEALTH OVERVIEW (2026-08-26, at Elo's
+          request, "so it looks more cleanly") so the page leads with the
+          one thing that changes/matters most, not a summary strip. The
+          page header (💗 HEALTH / "Your health, optimized.") that used to
+          sit above this was removed the same pass -- Elo: "get rid of
+          that... I don't wanna see that." */}
       <div className={CARD_CLASS} style={css(CARD + 'padding:16px;display:flex;flex-direction:column;gap:10px;')}>
         <div style={css('display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;')}>
           <div style={css('font-size:10px;font-weight:700;letter-spacing:0.08em;color:oklch(0.86 0.17 195);')}>⭐ AI INSIGHT</div>
@@ -265,6 +235,17 @@ export default function HealthTab({
         </div>
         <div style={css('font-size:13.5px;line-height:1.55;color:oklch(0.7 0.025 228);')}>
           {healthInsightText || 'No insight yet — hit GENERATE to have AI look for real patterns across your sleep, nutrition, and health habits.'}
+        </div>
+      </div>
+
+      {/* HEALTH OVERVIEW -- 4-up glanceable summary strip. */}
+      <div className={CARD_CLASS} style={css(CARD + 'padding:18px 22px;')}>
+        <div style={css('font-size:9.5px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);margin-bottom:14px;')}>HEALTH OVERVIEW</div>
+        <div style={css('display:flex;flex-wrap:wrap;gap:20px;')}>
+          <OverviewStat icon="🌙" color="oklch(0.62 0.2 235)" label="SLEEP" value={formatHoursMinutes(sleepAvg) + ' avg'} />
+          <OverviewStat icon="🍽" color="oklch(0.86 0.17 195)" label="NUTRITION" value={todayCaloriePct != null ? todayCaloriePct + '% of calorie target today' : '—'} />
+          <OverviewStat icon="✅" color="oklch(0.7 0.18 150)" label="HABITS" value={latestHabitDay ? latestHabitDay.health_habits_completed + ' / ' + latestHabitDay.health_habits_total + ' completed' : '—'} />
+          <OverviewStat icon="💗" color={rating.color} label="OVERALL" value={rating.label} />
         </div>
       </div>
 
@@ -316,11 +297,11 @@ export default function HealthTab({
           <div style={css('display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:10px;margin-bottom:18px;')}>
             {PRIORITY_MACROS.map((m) => (
               <MacroRing key={m.key} label={m.label} unit={m.unit} color={m.color} goal={healthGoals[m.goalKey]} isLimit={m.isLimit}
-                value={latestDay ? latestDay[m.key] || 0 : 0} size={40} variant="today" />
+                value={latestDay ? latestDay[m.key] || 0 : 0} size={40} />
             ))}
             {SECONDARY_MACROS.map((m) => (
               <MacroRing key={m.key} label={m.label} unit={m.unit} color={m.color} goal={m.target}
-                value={latestDay ? latestDay[m.key] || 0 : 0} size={40} variant="today" />
+                value={latestDay ? latestDay[m.key] || 0 : 0} size={40} />
             ))}
           </div>
 

@@ -68,6 +68,57 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Latest HEALTH tab refinement (2026-08-26) -- cleaner layout, clearer rings
+Elo asked for a focused pass on HEALTH specifically, by voice ("focus on the half
+tab" -> HEALTH): reorder AI INSIGHT above HEALTH OVERVIEW for cleaner spacing;
+remove the page header (💗 HEALTH / "Your health, optimized.") entirely; show each
+ring's percentage INSIDE the circle for the TODAY and NUTRITION sections so it pops
+more; make SLEEP's percentage a lot bigger; and show value/target as one big
+"{value} / {target}" pairing (a slash, not a separate line) for both the nutrition
+macros and sleep, sized big enough to actually read at a glance.
+
+`MacroRing` (`HealthTab.js`) rebuilt to a single unified rendering instead of the
+previous `variant="today"` vs `variant="trend"` branching (which produced two
+different, inconsistent layouts for what's now the same visual pattern everywhere):
+- The ring's own center now shows the fill percentage directly (big, bold, color-
+  matched to the ring) whenever no `icon` is set -- covers every TODAY-section and
+  NUTRITION-section ring. SLEEP is the one exception: its center is already occupied
+  by the moon icon (rotated -90deg SVG, can't share the space), so its percentage
+  stays in the text block instead, just at a much larger font size than before
+  (`fs(15)`, scaling up to ~20px on SLEEP's 84px hero ring) per Elo's explicit "make
+  the percentages in the sleep section a lot bigger."
+- The main value line changed from a smaller number with the target buried in a
+  separate line below, to one big `fs(22)` "{value} / {goal}{unit}" number (or "of
+  {goal}{unit} limit" for sugar, which is a ceiling not a target) -- exactly the
+  "if you have a slash and then goes the target... make it big" format Elo asked
+  for, applied uniformly to NUTRITION's range averages, TODAY's snapshot values,
+  and SLEEP's hours-slept ring alike.
+- Removing the variant branching also deleted the "avg" suffix that used to
+  distinguish a range-average ring from a today-snapshot ring -- not replaced with
+  anything, since each section's own header (TODAY's "vs. your goals" / NUTRITION's
+  "{N}-DAY AVERAGE") already makes that distinction without repeating it on every
+  ring.
+- `variant` prop and its two callers' `variant="today"` (`TODAY` section's
+  `PRIORITY_MACROS`/`SECONDARY_MACROS` maps) removed as dead code once the branch
+  it selected no longer existed.
+
+Page header and reorder: the 💗 HEALTH / "Your health, optimized." block (added in
+an earlier pass from a design mock) is gone outright, not hidden -- Elo: "I don't
+wanna see that." AI INSIGHT moved to the very top of the page, above HEALTH
+OVERVIEW, so the page now leads with the one thing that actually changes/matters
+(the generated insight) rather than a summary strip.
+
+Verified live in the browser (not just read back): AI INSIGHT renders first, no
+page header, TODAY's 6 rings each show their own percentage centered inside the
+ring (confirmed 25%/26%/16%/23%/62%/14% against real logged data), NUTRITION's
+rings do the same at a larger size (39%/37%/52%/53%/68%/55%), and SLEEP shows
+"8h 30m / 8h 0m" with a large "106%" beneath it. No console errors. This session's
+screenshot tool briefly rendered a blank gap mid-scroll on a couple of attempts
+(same general zoom/scroll rendering quirk already documented elsewhere in this
+file) -- resolved by widening the viewport height instead of scrolling, and cross-
+checked against `get_page_text` and direct `getBoundingClientRect()` calls the
+whole time, so this was a tooling artifact, not a real layout bug.
+
 ## Latest UI/UX refinements (2026-08-26) -- full audit and refinement pass
 Elo asked for a systematic UI/UX + backend-frontend interaction audit across HOME, CRM,
 BRAIN, and JOURNAL -- a debug-and-fix pass, not a new-feature pass. Went through every
