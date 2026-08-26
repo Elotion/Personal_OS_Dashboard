@@ -1278,7 +1278,7 @@ export default function App() {
       <div style={css('display:flex;align-items:center;justify-content:space-between;padding:20px 32px;border-bottom:1px solid oklch(0.58 0.18 204);')}>
         <div style={css('display:flex;align-items:center;gap:28px;')}>
           <div style={css('font-size:14px;font-weight:800;letter-spacing:0.08em;')}>
-            ELO<span style={css('color:oklch(0.6 0.025 228);font-weight:500;')}> // OS</span>
+            ELO<span style={css('color:oklch(0.6 0.025 228);font-weight:500;')}>{' // OS'}</span>
           </div>
           <div style={css('display:flex;gap:4px;')}>
             {tabs.map((name) => (

@@ -29,7 +29,7 @@ export default function BrainTab({ brainEntities, activeTasks, openEntityDetail 
     <div style={css('flex:1;padding:28px 36px;display:flex;flex-direction:column;gap:22px;')}>
       <div style={css('display:flex;align-items:center;justify-content:space-between;')}>
         <div style={css('font-size:20px;font-weight:700;letter-spacing:-0.01em;')}>
-          BRAIN <span style={css('color:oklch(0.55 0.025 228);font-weight:500;')}>// {brainEntities.length} ENTITIES</span>
+          BRAIN <span style={css('color:oklch(0.55 0.025 228);font-weight:500;')}>{'// '}{brainEntities.length} ENTITIES</span>
         </div>
       </div>
 

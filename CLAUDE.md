@@ -2385,6 +2385,35 @@ from.
    `https://<railway-url>/api/integrations/google/callback`). Code side is already
    done and locally verified (see above) -- nothing else to build before this can
    go live.
+   **First real Railway build attempt failed, real bug found and fixed
+   2026-08-26.** Elo created the Railway project and connected the GitHub repo;
+   the build failed at `npm run build` with 4 ESLint errors (a `no-unused-vars`
+   on a genuinely dead prop in `CrmTab.js`, and 3 `react/jsx-no-comment-textnodes`
+   false-positives -- `// OS`/`// N ENTITIES`/`// N ENTRIES` header text that's
+   real literal content, not a forgotten comment, but LOOKS like one to that
+   ESLint rule when it's the first thing in a JSX text node). Root cause the
+   "verified locally" claim above missed: Create React App's `react-scripts build`
+   only promotes ESLint *warnings* to hard build-*failures* when
+   `process.env.CI` is truthy -- these 4 issues had existed for a while as
+   harmless warnings under a plain local `npm run build` (CI unset), so
+   "compiles clean" was true locally and still wrong, because Railway (like
+   effectively every CI host) sets `CI=true` automatically. Confirmed by
+   reproducing the exact failure locally with `CI=true npm run build` before
+   touching anything, then re-running the same command after each fix until it
+   printed "Compiled successfully." -- not assumed from reading the Railway log
+   alone. Fixed: wrapped the three literal `// ...` header fragments in
+   `{'// '}` (or `{' // OS'}`) so they're JS string expressions instead of raw
+   JSX text nodes, and dropped the unused `crmDraggingId` destructure from
+   `CrmTab.js` (real dead code -- `App.js` already computes the drag-visual
+   state into `task.cardStyle` before handing tasks to `CrmTab`, which only
+   ever needed `setCrmDraggingId` to start/stop a drag, never the id itself).
+   Re-verified the actual running dev app afterward (all three header labels
+   render identically, CRM's kanban board unaffected) since this touches JSX
+   structure, not just the build step. **Worth remembering for next time:**
+   a local "the build compiles" claim on a CRA app is incomplete unless it was
+   run with `CI=true` -- that's the one env var that changes whether ESLint
+   warnings are cosmetic or fatal, and it's exactly the difference between
+   this machine and every real deploy host.
 9. **Finance** (last, deliberately — most complex, most sensitive data) — live data from
    multiple financial/investment accounts, feeding both the existing (currently
    hardcoded) Finance Pulse widget on HOME and a full Finance tab that doesn't exist yet.

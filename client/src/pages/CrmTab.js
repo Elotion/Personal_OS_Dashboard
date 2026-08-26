@@ -43,7 +43,7 @@ export default function CrmTab(props) {
     crmAddTimeframe, setCrmAddTimeframe, crmAddEntity, setCrmAddEntity,
     crmAddIsKey, setCrmAddIsKey,
     crmSmartText, setCrmSmartText, crmSmartParsing, submitCrmSmartAdd,
-    crmDraggingId, setCrmDraggingId, crmDragOverCol, setCrmDragOverCol,
+    setCrmDraggingId, crmDragOverCol, setCrmDragOverCol,
     submitCrmAdd, toggleCrmKey, archiveCrmTask, restoreCrmTask, deleteCrmTask,
     toggleCategoryPicker, setTaskCategory, dropOnCol,
   } = props;

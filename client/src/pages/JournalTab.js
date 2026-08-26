@@ -100,7 +100,7 @@ export default function JournalTab({
     <div style={css('flex:1;padding:24px 36px;display:flex;flex-direction:column;gap:18px;min-height:0;')}>
       <div style={css('display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;')}>
         <div style={css('font-size:13px;font-weight:700;letter-spacing:0.03em;')}>
-          JOURNAL <span style={css('color:oklch(0.55 0.025 228);font-weight:500;')}>// {journalEntries.length} {journalEntries.length === 1 ? 'ENTRY' : 'ENTRIES'}</span>
+          JOURNAL <span style={css('color:oklch(0.55 0.025 228);font-weight:500;')}>{'// '}{journalEntries.length} {journalEntries.length === 1 ? 'ENTRY' : 'ENTRIES'}</span>
         </div>
         <div style={css('display:flex;gap:2px;background:oklch(0.16 0.075 238);border:1px solid oklch(0.58 0.18 204);border-radius:8px;padding:3px;')}>
           {modes.map((m) => (
