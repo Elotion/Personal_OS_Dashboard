@@ -2,7 +2,7 @@ import React from 'react';
 import { css } from '../css';
 import { GOLD, CARD, CARD_CLASS } from '../theme';
 
-export default function BrainTab({ brainEntities, activeTasks, brainFilter, setBrainFilter, openEntityDetail }) {
+export default function BrainTab({ brainEntities, activeTasks, openEntityDetail }) {
   const decorated = brainEntities.map((en) => {
     const forEntity = activeTasks.filter((t) => t.entity === en.name.toUpperCase());
     const keyTasks = forEntity.filter((t) => t.key);
@@ -25,27 +25,11 @@ export default function BrainTab({ brainEntities, activeTasks, brainFilter, setB
     };
   });
 
-  const filters = ['Entity Dashboard', 'Life Bucket'];
-
   return (
     <div style={css('flex:1;padding:28px 36px;display:flex;flex-direction:column;gap:22px;')}>
       <div style={css('display:flex;align-items:center;justify-content:space-between;')}>
         <div style={css('font-size:20px;font-weight:700;letter-spacing:-0.01em;')}>
           BRAIN <span style={css('color:oklch(0.55 0.025 228);font-weight:500;')}>// {brainEntities.length} ENTITIES</span>
-        </div>
-        <div style={css('display:flex;gap:4px;background:oklch(0.16 0.075 238);border:1px solid oklch(0.58 0.18 204);border-radius:9px;padding:4px;')}>
-          {filters.map((name) => (
-            <div
-              key={name}
-              onClick={() => setBrainFilter(name)}
-              style={css(
-                'padding:7px 14px;font-size:11.5px;font-weight:600;border-radius:7px;cursor:pointer;transition:all 0.15s ease;' +
-                (name === brainFilter
-                  ? 'background:oklch(0.58 0.18 204);color:oklch(0.92 0.015 228);'
-                  : 'color:oklch(0.55 0.025 228);')
-              )}
-            >{name}</div>
-          ))}
         </div>
       </div>
 

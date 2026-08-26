@@ -14,6 +14,7 @@ function RangePicker({ value, onChange }) {
       {RANGE_OPTIONS.map((d) => (
         <div
           key={d}
+          className={value === d ? '' : 'elo-row-hover'}
           onClick={() => onChange(d)}
           style={css(
             'font-size:10px;font-weight:700;letter-spacing:0.03em;padding:5px 10px;border-radius:6px;cursor:pointer;white-space:nowrap;' +
@@ -39,8 +40,9 @@ function InsightsView({
           <div style={css('display:flex;align-items:center;gap:10px;')}>
             <RangePicker value={journalInsightRangeDays} onChange={setJournalInsightRangeDays} />
             <div
+              className={journalInsightGenerating ? '' : 'elo-btn-hover'}
               onClick={() => { if (!journalInsightGenerating) generateJournalInsight(); }}
-              style={css('font-size:10px;font-weight:700;letter-spacing:0.05em;padding:6px 12px;border-radius:6px;background:oklch(0.2 0.08 228);color:oklch(0.92 0.1 198);border:1px solid oklch(0.78 0.2 200);box-shadow:' + GLOW_STRONG + ';cursor:pointer;white-space:nowrap;')}
+              style={css('font-size:10px;font-weight:700;letter-spacing:0.05em;padding:6px 12px;border-radius:6px;background:oklch(0.2 0.08 228);color:oklch(0.92 0.1 198);border:1px solid oklch(0.78 0.2 200);box-shadow:' + GLOW_STRONG + ';cursor:pointer;white-space:nowrap;' + (journalInsightGenerating ? 'opacity:0.6;cursor:default;' : ''))}
             >{journalInsightGenerating ? 'GENERATING…' : 'GENERATE'}</div>
           </div>
         </div>
@@ -104,6 +106,7 @@ export default function JournalTab({
           {modes.map((m) => (
             <div
               key={m}
+              className={journalViewMode === m ? '' : 'elo-row-hover'}
               onClick={() => setJournalViewMode(m)}
               style={css(
                 'padding:7px 14px;font-size:11px;font-weight:700;letter-spacing:0.05em;border-radius:6px;cursor:pointer;white-space:nowrap;' +
@@ -125,6 +128,7 @@ export default function JournalTab({
             style={css('flex:1;min-width:0;background:oklch(0.16 0.075 238);border:1px solid oklch(0.58 0.18 204);border-radius:8px;padding:10px 14px;color:oklch(0.92 0.015 228);font-size:12.5px;')}
           />
           <div
+            className="elo-btn-hover"
             onClick={toggleJournalAdd}
             style={css('display:flex;align-items:center;gap:6px;background:oklch(0.58 0.18 204);color:oklch(0.92 0.015 228);font-size:11.5px;font-weight:700;letter-spacing:0.03em;padding:10px 16px;border-radius:8px;cursor:pointer;white-space:nowrap;flex-shrink:0;box-shadow:' + GLOW_STRONG + ';')}
           >+ NEW ENTRY</div>
@@ -148,10 +152,12 @@ export default function JournalTab({
           />
           <div style={css('display:flex;justify-content:flex-end;gap:8px;')}>
             <div
+              className="elo-row-hover"
               onClick={toggleJournalAdd}
-              style={css('font-size:11px;font-weight:600;color:oklch(0.55 0.025 228);cursor:pointer;padding:8px 12px;')}
+              style={css('font-size:11px;font-weight:600;color:oklch(0.55 0.025 228);cursor:pointer;padding:8px 12px;border-radius:6px;')}
             >CANCEL</div>
             <div
+              className="elo-btn-hover"
               onClick={submitJournalAdd}
               style={css('background:oklch(0.2 0.08 228);color:oklch(0.92 0.1 198);border:1px solid oklch(0.78 0.2 200);box-shadow:' + GLOW_STRONG + ';font-size:11.5px;font-weight:700;padding:8px 16px;border-radius:6px;cursor:pointer;white-space:nowrap;')}
             >SAVE ENTRY</div>
@@ -184,10 +190,12 @@ export default function JournalTab({
                     <span>⭐ {entry.captures}</span>
                   </div>
                   <div
-                    onClick={() => generateJournalSummary(entry.id)}
-                    style={css('font-size:10px;font-weight:700;letter-spacing:0.05em;padding:6px 12px;border-radius:6px;background:oklch(0.2 0.08 228);color:oklch(0.92 0.1 198);border:1px solid oklch(0.78 0.2 200);box-shadow:' + GLOW_STRONG + ';cursor:pointer;white-space:nowrap;')}
+                    className={entry.generating ? '' : 'elo-btn-hover'}
+                    onClick={() => { if (!entry.generating) generateJournalSummary(entry.id); }}
+                    style={css('font-size:10px;font-weight:700;letter-spacing:0.05em;padding:6px 12px;border-radius:6px;background:oklch(0.2 0.08 228);color:oklch(0.92 0.1 198);border:1px solid oklch(0.78 0.2 200);box-shadow:' + GLOW_STRONG + ';cursor:pointer;white-space:nowrap;' + (entry.generating ? 'opacity:0.6;cursor:default;' : ''))}
                   >{entry.generating ? 'GENERATING…' : 'GENERATE'}</div>
                   <div
+                    className="elo-hover-pop"
                     onClick={() => deleteJournalEntry(entry.id)}
                     style={css('width:26px;height:26px;flex-shrink:0;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:13px;')}
                   >✕</div>
@@ -206,6 +214,7 @@ export default function JournalTab({
                   </>
                 ) : null}
                 <div
+                  className="elo-hover-pop"
                   onClick={() => extractJournalMood(entry.id)}
                   title="Re-analyze mood/themes"
                   style={css('font-size:11px;color:oklch(0.5 0.025 228);cursor:pointer;margin-left:auto;')}
@@ -218,11 +227,13 @@ export default function JournalTab({
               </div>
               <div style={css('display:flex;align-items:center;gap:16px;')}>
                 <div
+                  className="elo-link-hover"
                   onClick={() => toggleJournalRaw(entry.id)}
                   style={css('font-size:11.5px;font-weight:600;color:oklch(0.78 0.2 200);cursor:pointer;display:inline-block;')}
                 >{entry.expanded ? 'HIDE RAW' : 'SHOW RAW'}</div>
                 {journalEditingId !== entry.id && (
                   <div
+                    className="elo-link-hover"
                     onClick={() => startEditJournal(entry.id)}
                     style={css('font-size:11.5px;font-weight:600;color:oklch(0.55 0.025 228);cursor:pointer;display:inline-block;')}
                   >EDIT</div>
@@ -243,10 +254,12 @@ export default function JournalTab({
                       />
                       <div style={css('display:flex;gap:8px;justify-content:flex-end;margin-top:10px;')}>
                         <div
+                          className="elo-row-hover"
                           onClick={cancelEditJournal}
-                          style={css('font-size:11px;font-weight:600;color:oklch(0.55 0.025 228);cursor:pointer;padding:7px 12px;')}
+                          style={css('font-size:11px;font-weight:600;color:oklch(0.55 0.025 228);cursor:pointer;padding:7px 12px;border-radius:6px;')}
                         >CANCEL</div>
                         <div
+                          className="elo-btn-hover"
                           onClick={saveEditJournal}
                           style={css('font-size:10.5px;font-weight:700;letter-spacing:0.05em;padding:7px 14px;border-radius:6px;background:oklch(0.8 0.19 200 / 0.15);border:1px solid oklch(0.8 0.19 200);color:oklch(0.8 0.19 200);cursor:pointer;')}
                         >SAVE</div>
@@ -262,7 +275,7 @@ export default function JournalTab({
         </div>
       ) : (
         <div style={css('flex:1;display:flex;align-items:center;justify-content:center;color:oklch(0.5 0.025 228);font-size:13px;')}>
-          No entries match that search.
+          {q ? 'No entries match that search.' : 'No journal entries yet.'}
         </div>
       )}
     </div>

@@ -68,6 +68,168 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Latest UI/UX refinements (2026-08-26) -- full audit and refinement pass
+Elo asked for a systematic UI/UX + backend-frontend interaction audit across HOME, CRM,
+BRAIN, and JOURNAL -- a debug-and-fix pass, not a new-feature pass. Went through every
+tab in the actual browser, made a list of visual issues, fixed them, then did live
+end-to-end interaction testing (CRM full CRUD, HOME habit persistence, BRAIN entity
+panel accuracy, JOURNAL mood extraction + AI recap + insights, and an explicit
+backend-down error-handling test). One real, previously-invisible bug came out of that
+last test and got fixed same-session.
+
+**Visual/spacing fixes:**
+1. **HOME's right column (GOALS/NUTRITION/SLEEP) had a large dead-space gap at the
+   bottom** whenever a sibling column (HABITS+CALENDAR, or the habit-edit panel) was
+   taller -- the 3-column row had no `align-items` set, so it defaulted to `stretch`,
+   forcing every column's own background "well" to match the tallest column's height
+   even though its content ended much sooner. Measured directly via
+   `getBoundingClientRect()`: with the habit-manage panel open, the right column was
+   being stretched to 1195.5px tall while its actual content only needed 684.5px --
+   over 500px of visible empty space. Fixed with `align-items:flex-start` on the row
+   container (`HomeTab.js`) -- confirmed afterward that each column now sizes to its
+   own content independently (824 / 1195.5 / 684.5px in the same test case).
+2. **CRM's Kanban empty columns showed a bare box with zero indication** (e.g. SOMEDAY
+   with 0 tasks), inconsistent with Archive view's "Nothing archived yet." message.
+   Added a matching "Nothing here." empty-state line to empty Kanban columns
+   (`CrmTab.js`).
+
+**Real bugs found and fixed:**
+3. **BRAIN's "Life Bucket" filter toggle was completely non-functional** -- clicking it
+   changed its own active/selected styling but never affected the rendered grid at all
+   (`decorated`/the entity grid always rendered the same "Entity Dashboard" content
+   regardless of `brainFilter`). Confirmed by reading `BrainTab.js`: the state existed,
+   the click handler existed, but nothing downstream ever branched on it. This is worse
+   than no toggle at all -- it gives false visual feedback that something changed when
+   it didn't. Since building out a real second view would be a new feature (out of
+   scope for a debug-and-fix pass), removed the dead toggle entirely: `BrainTab.js`
+   lost the `filters` array and the whole toggle-pill row, `App.js` lost the
+   `brainFilter`/`setBrainFilter` state and its entry in the persisted UI-state blob.
+   Per this project's standing "delete dead code, don't leave unused flags" convention.
+4. **JOURNAL's empty state always said "No entries match that search"** regardless of
+   whether a search was actually active -- with zero real entries and an empty search
+   box, it still claimed a search had failed to match anything, which is misleading
+   (there's a real difference between "you searched and got nothing" and "there's
+   nothing here yet"). Fixed to branch on whether the trimmed search query is non-empty
+   (`JournalTab.js`): shows "No journal entries yet." when the list is genuinely empty,
+   "No entries match that search." only when a real query produced zero results.
+   Verified both branches live (emptied search box -> correct message; typed a
+   guaranteed-no-match string -> correct message).
+5. **JOURNAL's per-entry GENERATE (AI RECAP) button had no double-submit guard** --
+   every other GENERATE button in the app (JOURNAL's INSIGHTS, HEALTH's insight) already
+   guarded against a second click firing a concurrent request while one was in flight,
+   but this one didn't. Added the same `if (!entry.generating)` guard used everywhere
+   else, plus a dimmed/non-pointer visual state while generating (matching the pattern
+   already used on CRM's AI ADD and NUTRITION's add-food button).
+6. **Writes that fail mid-session (backend down, network drop) failed completely
+   silently** -- reproduced directly by killing the backend process and then starring/
+   archiving/creating a CRM task: the optimistic UI update either silently reverted
+   (create) or just never persisted (star/archive/restore/delete), with the failure
+   only ever visible in the browser console (`.catch(console.error)`), never to Elo.
+   Root cause: this app already has exactly one error-banner mechanism for this
+   (`tasksError`, shown in the top nav bar), but it was wired to ONLY the initial
+   page-load fetch (`useEffect(..., [])`) -- a write that failed *after* the page had
+   already loaded successfully had no path to ever set it. Fixed by wiring the same
+   `tasksError` banner into all 5 of CRM's write handlers (`toggleCrmKey`,
+   `archiveCrmTask`, `restoreCrmTask`, `deleteCrmTask`, `submitCrmAdd` -- new shared
+   `WRITE_FAILED_MSG` constant in `App.js`): each now sets the banner on failure and
+   clears it on the next successful write. Verified the full cycle live: killed the
+   backend, starred a task, watched the banner appear ("Could not save that change --
+   check your connection and try again.") while the star still optimistically flipped
+   locally; restarted the backend, starred it back, confirmed the banner cleared and
+   the real Supabase state matched. This was a real, user-facing gap the audit's own
+   "if submission fails, does the user know?" question was specifically asking about --
+   not extended to HOME/JOURNAL/BRAIN's own write handlers in this pass, since CRM was
+   the concrete reproduction case and this project's own convention is to fix what's
+   confirmed broken, not speculatively harden everything that shares a pattern.
+
+**Component consistency -- missing hover feedback (systemic, fixed broadly):**
+7. Audited interactive-element feedback via `getComputedStyle(el).cursor === 'pointer'`
+   against which elements actually carried a hover-capable class -- **66 of 70
+   clickable elements on HOME alone** (and proportionally similar across CRM/BRAIN/
+   JOURNAL) had zero visual feedback beyond the cursor turning into a pointer. Root
+   cause: this app styles almost everything through a `css()` helper that converts a
+   CSS string into an inline React style object (`client/src/css.js`), and inline
+   styles cannot express `:hover` -- so hover states only ever existed on the handful
+   of elements someone had already added a real CSS class to (`elo-hover-pop`,
+   `elo-row-hover`, `elo-entity-card`). Added two new shared classes to `index.css`:
+   `elo-btn-hover` (brightness+lift on hover, a dimmer "pressed" flash on `:active` --
+   for solid CTA-style buttons: ADD, CAPTURE, SAVE, GENERATE, WENT TO BED, habit tiles,
+   calendar day cells, etc.) and `elo-link-hover` (a lighter opacity-dip, for plain
+   inline text links like SHOW RAW/EDIT where a lift would look heavy-handed) --
+   mirroring `elo-entity-card:hover`'s existing lift+brighten visual language rather
+   than inventing a new one. Applied across `HomeTab.js`, `CrmTab.js`, `JournalTab.js`,
+   and `App.js`'s top nav to every primary button, toggle pill, checkbox, and icon
+   button identified in the audit -- reduced HOME's own unstyled-clickable count from
+   66 to 31 (remaining ones are largely native `<select>` dropdown options and drag
+   handles, which don't take the same treatment). Deliberately scoped to the elements
+   an audit like this would actually flag (primary actions, nav, toggles) rather than
+   chasing literally every clickable pixel in the app.
+
+**Verified via live end-to-end testing, no other bugs found:**
+- **CRM full lifecycle**: created a real test task, starred it, archived it, restored
+  it (confirmed it came back unchecked, not falsely marked done -- the exact bug an
+  earlier session's audit had already found and fixed once), searched for it, deleted
+  it. Cross-checked against `GET /api/tasks` at every step; zero drift between UI and
+  Supabase at any point; test task fully removed afterward, confirmed via a fresh
+  fetch.
+- **HOME habit persistence**: checked "Working Out," confirmed the daily-score ring and
+  header updated instantly, confirmed the completion persisted to Supabase
+  (`completed_today`/`completed_date`), confirmed it survived a full page reload, then
+  reverted it -- important this session specifically because 2026-08-26 is Elo's real
+  first day of tracked usage (see the Data note above), so a stray test completion
+  would have polluted real data, not test data. Confirmed via `GET
+  /api/analytics/habits` that the revert left zero residue (0 completions logged for
+  that habit today).
+- **BRAIN entity panel**: confirmed the panel opens with exactly accurate counts (UCLA:
+  2 open, 2 key, matching its card) and lists the correct two tasks. Hit a false alarm
+  during this check -- the panel appeared not to open in three consecutive screenshots,
+  but `elementFromPoint()`/direct rect queries confirmed it was actually rendering
+  correctly and instantly; the screenshots were stale/lagged relative to the real DOM
+  state (the panel's own double-`requestAnimationFrame` open animation plus this
+  session's screenshot tool not always reflecting a just-changed page, a tooling quirk
+  already documented elsewhere in this file, not a real bug). A later screenshot showed
+  it correctly.
+- **JOURNAL**: created a real entry with clearly positive text; mood extraction
+  correctly scored it 5/5 with sensible themes ("work productivity," "accomplishment,"
+  "energy"); AI RECAP generated a coherent, content-aware paragraph; INSIGHTS'
+  GENERATE correctly identified there was no real cross-domain pattern in the sparse
+  surrounding data (mood logged exactly once, habits/tasks otherwise empty) and
+  explicitly declined to invent one -- exactly the designed behavior, not a
+  generic-sounding paragraph. Entry deleted afterward, confirmed via a fresh fetch that
+  real data (0 entries) was untouched.
+
+**Flagged, deliberately not fixed (mobile is out of scope per Elo's own framing --
+"don't fix mobile specifically unless it's obviously broken, that's a future phase"):**
+- **Top nav breaks at phone width (375px).** `App.js`'s header row (logo + 6 tabs +
+  date/clock) has no wrap, scroll, or collapse behavior for narrow viewports -- at
+  375px the tab list visually compresses/overflows and JOURNAL, HEALTH, and the
+  date/clock become unreachable (confirmed `document.body.scrollWidth === innerWidth`,
+  i.e. this isn't even reachable via a horizontal scroll, the content is just
+  squeezed/clipped with no affordance to get to it). This is a real, "obviously
+  broken" finding by the letter of Elo's own carve-out, but a proper fix needs an
+  actual responsive nav pattern (hamburger menu or a scrollable tab strip) -- a
+  bigger, dedicated change better suited to its own future phase than an incidental
+  fix inside this audit, so it's flagged here rather than fixed. Worth prioritizing
+  whenever mobile use is actually planned.
+
+**Tooling artifacts hit during this session's testing -- NOT app bugs, noted so a
+future session doesn't re-investigate them:**
+- This session's browser-automation `Backspace`/`Delete` key presses do not trigger
+  real text deletion in this app's controlled React inputs -- typing/inserting
+  characters works completely normally, only deletion silently no-ops. Reproduced
+  identically on two different, freshly-typed-into search inputs (CRM and JOURNAL),
+  ruling out an app-level bug in either. Confirmed by setting the DOM value directly
+  via the native `HTMLInputElement` value setter + dispatching a real `input` event,
+  which cleared the field instantly -- so the app's own controlled-input handling is
+  fine, this is specifically a synthetic-`KeyboardEvent` limitation of this browser
+  automation environment, the same general class of limitation already documented
+  elsewhere in this file for HTML5 drag-and-drop.
+
+Git: all of the above (HomeTab.js, CrmTab.js, BrainTab.js, JournalTab.js, App.js,
+index.css, this CLAUDE.md section) is one combined "UI/UX audit and refinement"
+commit. Backend restarted twice during this session for the intentional backend-down
+error-handling test, each time verified back up via a direct curl before resuming.
+
 ## Latest Session Summary (2026-08-23)
 **Completed this session:**
 - **Phase 1 — Security foundation.** `supabaseClient.js` now prefers

@@ -29,8 +29,8 @@ function TaskRow({ task, archiveCrmTask, toggleCategoryPicker, setTaskCategory, 
         <div onClick={() => toggleCategoryPicker(task.id)} style={css(task.categoryBtnStyle)}>{task.categoryIcon}</div>
         <CategoryPicker task={task} setTaskCategory={setTaskCategory} />
       </div>
-      <div onClick={() => toggleCrmKey(task.id)} style={css(task.starStyle)}>{task.starChar}</div>
-      <div onClick={() => deleteCrmTask(task.id)} style={css('width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:13px;flex-shrink:0;')}>✕</div>
+      <div className="elo-hover-pop" onClick={() => toggleCrmKey(task.id)} style={css(task.starStyle)}>{task.starChar}</div>
+      <div className="elo-hover-pop" onClick={() => deleteCrmTask(task.id)} style={css('width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:13px;flex-shrink:0;')}>✕</div>
     </div>
   );
 }
@@ -97,6 +97,7 @@ export default function CrmTab(props) {
           {viewButtons.map((v) => (
             <div
               key={v}
+              className={crmView === v ? '' : 'elo-row-hover'}
               onClick={() => setCrmView(v)}
               style={css(
                 'padding:8px 14px;font-size:11px;font-weight:700;letter-spacing:0.05em;border-radius:6px;cursor:pointer;white-space:nowrap;flex-shrink:0;' +
@@ -119,6 +120,7 @@ export default function CrmTab(props) {
           style={css('flex:1;min-width:0;background:oklch(0.16 0.075 238);border:1px solid oklch(0.58 0.18 204);border-radius:8px;padding:10px 14px;color:oklch(0.92 0.015 228);font-size:12.5px;')}
         />
         <div
+          className="elo-btn-hover"
           onClick={() => setCrmAddOpen(!crmAddOpen)}
           style={css('display:flex;align-items:center;gap:6px;background:oklch(0.58 0.18 204);color:oklch(0.92 0.015 228);font-size:11.5px;font-weight:700;letter-spacing:0.03em;padding:10px 16px;border-radius:8px;cursor:pointer;white-space:nowrap;flex-shrink:0;box-shadow:' + GLOW_STRONG + ';')}
         >+ ADD</div>
@@ -133,8 +135,9 @@ export default function CrmTab(props) {
           style={css('flex:1;min-width:0;background:oklch(0.16 0.075 238);border:1px solid ' + GOLD + ';border-radius:8px;padding:10px 14px;color:oklch(0.92 0.015 228);font-size:12.5px;')}
         />
         <div
+          className={crmSmartParsing ? '' : 'elo-btn-hover'}
           onClick={() => { if (!crmSmartParsing) submitCrmSmartAdd(); }}
-          style={css('display:flex;align-items:center;gap:6px;background:' + GOLD + ';color:oklch(0.12 0.06 240);font-size:11.5px;font-weight:700;letter-spacing:0.03em;padding:10px 16px;border-radius:8px;cursor:pointer;white-space:nowrap;flex-shrink:0;')}
+          style={css('display:flex;align-items:center;gap:6px;background:' + GOLD + ';color:oklch(0.12 0.06 240);font-size:11.5px;font-weight:700;letter-spacing:0.03em;padding:10px 16px;border-radius:8px;cursor:pointer;white-space:nowrap;flex-shrink:0;' + (crmSmartParsing ? 'opacity:0.6;cursor:default;' : ''))}
         >{crmSmartParsing ? 'PARSING…' : '✨ AI ADD'}</div>
       </div>
 
@@ -162,11 +165,13 @@ export default function CrmTab(props) {
             {ENTITY_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
           <div
+            className="elo-hover-pop"
             onClick={() => setCrmAddIsKey(!crmAddIsKey)}
             title="Mark as key task"
             style={css('display:flex;align-items:center;justify-content:center;width:34px;flex-shrink:0;cursor:pointer;font-size:16px;color:' + (crmAddIsKey ? GOLD : 'oklch(0.4 0.025 228)') + ';')}
           >★</div>
           <div
+            className="elo-btn-hover"
             onClick={submitCrmAdd}
             style={css('background:oklch(0.2 0.08 228);color:oklch(0.92 0.1 198);border:1px solid oklch(0.78 0.2 200);box-shadow:' + GLOW_STRONG + ';font-size:11.5px;font-weight:700;padding:8px 16px;border-radius:6px;cursor:pointer;white-space:nowrap;flex-shrink:0;')}
           >ADD</div>
@@ -223,12 +228,15 @@ export default function CrmTab(props) {
                           <div onClick={() => toggleCategoryPicker(task.id)} style={css(task.categoryBtnStyle)}>{task.categoryIcon}</div>
                           <CategoryPicker task={task} setTaskCategory={setTaskCategory} />
                         </div>
-                        <div onClick={() => toggleCrmKey(task.id)} style={css(task.starStyle)}>{task.starChar}</div>
-                        <div onClick={() => deleteCrmTask(task.id)} style={css('width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:12px;flex-shrink:0;')}>✕</div>
+                        <div className="elo-hover-pop" onClick={() => toggleCrmKey(task.id)} style={css(task.starStyle)}>{task.starChar}</div>
+                        <div className="elo-hover-pop" onClick={() => deleteCrmTask(task.id)} style={css('width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:12px;flex-shrink:0;')}>✕</div>
                       </div>
                       <div style={css('font-size:9px;font-weight:600;letter-spacing:0.05em;color:oklch(0.5 0.025 228);margin-top:6px;margin-left:24px;')}>· {task.entity}</div>
                     </div>
                   ))}
+                  {col.tasks.length === 0 && (
+                    <div style={css('padding:12px 4px;text-align:center;color:oklch(0.5 0.025 228);font-size:11px;')}>Nothing here.</div>
+                  )}
                 </div>
               </div>
             ))}
@@ -257,8 +265,8 @@ export default function CrmTab(props) {
             {archivedTasks.map(decorate).map((task) => (
               <div key={task.id} style={css('display:flex;align-items:center;gap:12px;padding:11px 6px;border-bottom:1px solid oklch(0.48 0.14 210);')}>
                 <div style={css('font-size:13px;font-weight:500;flex:1;min-width:0;color:oklch(0.55 0.025 228);text-decoration:line-through;')}>{task.title}</div>
-                <div onClick={() => restoreCrmTask(task.id)} style={css('font-size:10.5px;font-weight:700;letter-spacing:0.05em;padding:7px 14px;border-radius:6px;background:oklch(0.8 0.19 200 / 0.15);border:1px solid oklch(0.8 0.19 200);color:oklch(0.8 0.19 200);cursor:pointer;white-space:nowrap;flex-shrink:0;')}>RESTORE</div>
-                <div onClick={() => deleteCrmTask(task.id)} style={css('width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:13px;flex-shrink:0;')}>✕</div>
+                <div className="elo-btn-hover" onClick={() => restoreCrmTask(task.id)} style={css('font-size:10.5px;font-weight:700;letter-spacing:0.05em;padding:7px 14px;border-radius:6px;background:oklch(0.8 0.19 200 / 0.15);border:1px solid oklch(0.8 0.19 200);color:oklch(0.8 0.19 200);cursor:pointer;white-space:nowrap;flex-shrink:0;')}>RESTORE</div>
+                <div className="elo-hover-pop" onClick={() => deleteCrmTask(task.id)} style={css('width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:13px;flex-shrink:0;')}>✕</div>
               </div>
             ))}
             {archivedTasks.length === 0 && (

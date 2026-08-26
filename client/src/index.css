@@ -70,6 +70,36 @@ input:focus, textarea:focus, select:focus {
   filter: brightness(1.18);
 }
 
+/* Generic hover/active feedback for solid CTA-style buttons (ADD, CAPTURE,
+   SAVE, GENERATE, WENT TO BED, ...) -- added during the 2026-08-26 UI/UX
+   audit after finding ~66 of 70 clickable elements on HOME alone had no
+   visual feedback beyond the cursor turning to a pointer. Mirrors
+   .elo-entity-card's own lift+brighten hover language for consistency
+   rather than inventing a new one. :active gives a quick "pressed" flash
+   distinct from hover so a click reads as registered before the request
+   resolves. */
+.elo-btn-hover {
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+.elo-btn-hover:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+.elo-btn-hover:active {
+  filter: brightness(0.94);
+  transform: translateY(0);
+}
+
+/* Lighter-touch hover for plain inline text links (SHOW RAW, EDIT, ...)
+   where a lift/brighten would look heavy-handed -- a simple opacity dip
+   reads as "clickable" without competing with the surrounding text. */
+.elo-link-hover {
+  transition: opacity 0.15s ease;
+}
+.elo-link-hover:hover {
+  opacity: 0.65;
+}
+
 /* Shared "major box" edge-lighting effect (2026-08-25, architectural
    rewrite). Every earlier pass here -- the mask-composite gradient border,
    the percentage-based interior glow, screen blend mode -- was still

@@ -82,6 +82,7 @@ function HabitTile({ h, todayStr, expandedHabitId, toggleHabitExpand, toggleHabi
   const subtasksDone = hasSubtasks ? h.subtasks.filter((s) => s.completedDate === todayStr).length : 0;
   return (
     <div
+      className="elo-btn-hover"
       onClick={() => (hasSubtasks ? toggleHabitExpand(h.id) : toggleHabit(h.id))}
       style={css(
         'position:relative;overflow:visible;background:oklch(0.12 0.06 240);border-radius:9px;padding:9px 10px;cursor:pointer;border:1px solid ' +
@@ -145,6 +146,7 @@ function HabitSubtaskChecklist({ habit, todayStr, toggleSubtask }) {
           return (
             <div
               key={s.id}
+              className="elo-btn-hover"
               onClick={() => toggleSubtask(habit.id, s.id)}
               style={css(
                 'display:flex;align-items:center;gap:7px;padding:8px 12px;border-radius:8px;background:oklch(0.16 0.075 238);cursor:pointer;transition:border-color 0.2s ease;border:1px solid ' +
@@ -303,7 +305,7 @@ export default function HomeTab(props) {
   const openCount = keyTasks.filter((t) => !t.done).length;
 
   return (
-    <div style={css('display:flex;flex:1;flex-wrap:wrap;gap:20px;padding:0 12px;')}>
+    <div style={css('display:flex;flex:1;flex-wrap:wrap;align-items:flex-start;gap:20px;padding:0 12px;')}>
 
       {/* ================= LEFT COLUMN ================= */}
       <div style={css(COL)}>
@@ -326,6 +328,7 @@ export default function HomeTab(props) {
               style={css('display:none;')}
             />
             <div
+              className="elo-hover-pop"
               onClick={() => photoInputRef.current && photoInputRef.current.click()}
               style={css(
                 'width:44px;height:44px;border-radius:10px;flex-shrink:0;cursor:pointer;position:relative;overflow:hidden;' +
@@ -354,6 +357,7 @@ export default function HomeTab(props) {
                 <div style={css('display:flex;align-items:center;gap:6px;')}>
                   <div style={css('font-size:16px;font-weight:700;')}>{profile.name}</div>
                   <div
+                    className="elo-link-hover"
                     onClick={() => startEditProfile('name')}
                     style={css('cursor:pointer;color:oklch(0.5 0.025 228);font-size:10px;flex-shrink:0;')}
                   >✎</div>
@@ -372,6 +376,7 @@ export default function HomeTab(props) {
                 <div style={css('display:flex;align-items:center;gap:6px;')}>
                   <div style={css('font-size:11px;color:oklch(0.55 0.025 228);')}>{profile.tagline}</div>
                   <div
+                    className="elo-link-hover"
                     onClick={() => startEditProfile('tagline')}
                     style={css('cursor:pointer;color:oklch(0.5 0.025 228);font-size:9px;flex-shrink:0;')}
                   >✎</div>
@@ -395,6 +400,7 @@ export default function HomeTab(props) {
                 <div style={css('display:flex;align-items:center;gap:6px;')}>
                   <div style={css('font-size:12px;font-style:italic;color:oklch(0.82 0.015 228);')}>{profile.focus}</div>
                   <div
+                    className="elo-link-hover"
                     onClick={() => startEditProfile('focus')}
                     style={css('cursor:pointer;color:oklch(0.5 0.025 228);font-size:9px;flex-shrink:0;')}
                   >✎</div>
@@ -470,6 +476,7 @@ export default function HomeTab(props) {
                 )}
               >
                 <div
+                  className="elo-hover-pop"
                   onClick={() => toggleTask(t.id)}
                   style={css(
                     'width:15px;height:15px;border-radius:4px;border:1.5px solid ' +
@@ -516,6 +523,7 @@ export default function HomeTab(props) {
               style={css('flex:1;min-width:0;background:transparent;border:none;color:oklch(0.92 0.015 228);font-size:13.5px;padding:8px 0;')}
             />
             <div
+              className="elo-btn-hover"
               onClick={submitCapture}
               style={css('display:flex;align-items:center;gap:6px;background:oklch(0.2 0.08 228);color:oklch(0.92 0.1 198);border:1px solid oklch(0.78 0.2 200);box-shadow:0 0 16px -2px oklch(0.78 0.2 200 / 0.4);font-size:11.5px;font-weight:700;letter-spacing:0.04em;padding:9px 16px;border-radius:7px;cursor:pointer;white-space:nowrap;flex-shrink:0;')}
             >CAPTURE →</div>
@@ -619,6 +627,7 @@ export default function HomeTab(props) {
                   {ENTITY_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
                 <div
+                  className="elo-btn-hover"
                   onClick={addHabit}
                   style={css('width:32px;height:32px;flex-shrink:0;border-radius:7px;background:oklch(0.58 0.18 204);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;box-shadow:' + GLOW_STRONG + ';')}
                 >+</div>
@@ -686,11 +695,13 @@ export default function HomeTab(props) {
                         <div style={css('font-size:9px;font-weight:600;letter-spacing:0.05em;color:oklch(0.5 0.025 228);flex-shrink:0;')}>{h.category}</div>
                       )}
                       <div
+                        className="elo-hover-pop"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => startEditHabit(h.id)}
                         style={css('width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.5 0.025 228);font-size:11px;flex-shrink:0;')}
                       >✎</div>
                       <div
+                        className="elo-hover-pop"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => deleteHabit(h.id)}
                         style={css('width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:12px;flex-shrink:0;')}
@@ -737,6 +748,7 @@ export default function HomeTab(props) {
                               <span style={css('cursor:grab;color:oklch(0.45 0.025 228);font-size:11px;letter-spacing:-1px;flex-shrink:0;')}>⋮⋮</span>
                               <span style={css('font-size:11px;color:oklch(0.75 0.02 228);white-space:nowrap;')}>{s.label}</span>
                               <div
+                                className="elo-hover-pop"
                                 onMouseDown={(e) => e.preventDefault()}
                                 onClick={() => deleteSubtask(h.id, s.id)}
                                 style={css('width:16px;height:16px;flex-shrink:0;border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:9px;')}
@@ -753,6 +765,7 @@ export default function HomeTab(props) {
                             style={css('flex:1;min-width:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.4 0.08 220);border-radius:6px;padding:6px 8px;color:oklch(0.92 0.015 228);font-size:11px;')}
                           />
                           <div
+                            className="elo-hover-pop"
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => addSubtask(h.id)}
                             style={css('width:26px;height:26px;flex-shrink:0;border-radius:6px;background:oklch(0.4 0.08 220);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;')}
@@ -779,12 +792,14 @@ export default function HomeTab(props) {
             <div style={css('display:flex;align-items:center;gap:10px;')}>
               {!googleConnected && (
                 <div
+                  className="elo-btn-hover"
                   onClick={connectGoogleCalendar}
                   style={css('font-size:9.5px;font-weight:700;letter-spacing:0.04em;padding:5px 10px;border-radius:6px;background:oklch(0.58 0.18 204 / 0.15);border:1px solid oklch(0.58 0.18 204);color:oklch(0.75 0.15 210);cursor:pointer;white-space:nowrap;')}
                 >CONNECT GOOGLE CALENDAR</div>
               )}
               {googleConnected && (
                 <div
+                  className="elo-hover-pop"
                   onClick={toggleCalendarManage}
                   title="Choose which calendars to show"
                   style={css('width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;background:' + (calendarManageOpen ? 'oklch(0.86 0.17 195 / 0.15)' : 'transparent') + ';color:' + (calendarManageOpen ? 'oklch(0.86 0.17 195)' : 'oklch(0.6 0.025 228)') + ';')}
@@ -819,8 +834,9 @@ export default function HomeTab(props) {
                   .map((cal) => (
                     <div
                       key={cal.id}
+                      className="elo-row-hover"
                       onClick={() => toggleCalendarVisibility(cal.id)}
-                      style={css('display:flex;align-items:center;gap:12px;cursor:pointer;')}
+                      style={css('display:flex;align-items:center;gap:12px;cursor:pointer;border-radius:6px;padding:4px 6px;')}
                     >
                       <div style={css('width:20px;height:20px;flex-shrink:0;border-radius:5px;border:2px solid ' + (cal.visible ? 'oklch(0.86 0.17 195)' : 'oklch(0.4 0.025 228)') + ';background:' + (cal.visible ? 'oklch(0.86 0.17 195 / 0.25)' : 'transparent') + ';')} />
                       <div style={css('font-size:14.5px;color:' + (cal.visible ? 'oklch(0.85 0.015 228)' : 'oklch(0.5 0.025 228)') + ';')}>{cal.name}{cal.isPrimary ? ' (primary)' : ''}</div>
@@ -831,7 +847,7 @@ export default function HomeTab(props) {
           )}
           <div style={css('display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:16px;flex-shrink:0;')}>
             {weekDays.map((d) => (
-              <div key={d.idx} onClick={() => setSelectedDayIdx(d.idx)} style={css(d.cellStyle)}>
+              <div key={d.idx} className="elo-btn-hover" onClick={() => setSelectedDayIdx(d.idx)} style={css(d.cellStyle)}>
                 <div style={css('font-size:8.5px;font-weight:600;letter-spacing:0.05em;color:oklch(0.5 0.025 228);margin-bottom:4px;')}>{d.weekday}</div>
                 <div style={css('font-size:14px;font-weight:700;')}>{d.num}</div>
               </div>
@@ -880,6 +896,7 @@ export default function HomeTab(props) {
             <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);')}>THIS WEEK</div>
             {weeklyGoals.length > 0 && !weeklyGoalAddOpen && (
               <div
+                className="elo-hover-pop"
                 onClick={() => setWeeklyGoalAddOpen(true)}
                 style={css('width:20px;height:20px;border-radius:6px;background:oklch(0.12 0.06 240);border:1px solid oklch(0.4 0.08 220);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;color:oklch(0.6 0.025 228);flex-shrink:0;')}
               >+</div>
@@ -895,7 +912,7 @@ export default function HomeTab(props) {
                 placeholder="Add a weekly goal"
                 style={css('flex:1;min-width:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.58 0.18 204);border-radius:7px;padding:8px 10px;color:oklch(0.92 0.015 228);font-size:12px;')}
               />
-              <div onClick={addWeeklyGoal} style={css('width:32px;height:32px;flex-shrink:0;border-radius:7px;background:oklch(0.58 0.18 204);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;box-shadow:' + GLOW_STRONG + ';')}>+</div>
+              <div className="elo-btn-hover" onClick={addWeeklyGoal} style={css('width:32px;height:32px;flex-shrink:0;border-radius:7px;background:oklch(0.58 0.18 204);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;box-shadow:' + GLOW_STRONG + ';')}>+</div>
             </div>
           )}
           <div style={css('display:flex;flex-direction:column;gap:8px;margin-bottom:16px;')}>
@@ -914,10 +931,12 @@ export default function HomeTab(props) {
                   <div style={css('flex:1;min-width:0;')}>{g.text}</div>
                 )}
                 <div
+                  className="elo-hover-pop"
                   onClick={() => startEditGoal(g.id)}
                   style={css('width:18px;height:18px;flex-shrink:0;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.5 0.025 228);font-size:10px;')}
                 >✎</div>
                 <div
+                  className="elo-hover-pop"
                   onClick={() => deleteGoal(g.id)}
                   style={css('width:18px;height:18px;flex-shrink:0;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:11px;')}
                 >✕</div>
@@ -929,6 +948,7 @@ export default function HomeTab(props) {
             <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);')}>THIS MONTH</div>
             {monthlyGoals.length > 0 && !monthlyGoalAddOpen && (
               <div
+                className="elo-hover-pop"
                 onClick={() => setMonthlyGoalAddOpen(true)}
                 style={css('width:20px;height:20px;border-radius:6px;background:oklch(0.12 0.06 240);border:1px solid oklch(0.4 0.08 220);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;color:oklch(0.6 0.025 228);flex-shrink:0;')}
               >+</div>
@@ -944,7 +964,7 @@ export default function HomeTab(props) {
                 placeholder="Add a monthly goal"
                 style={css('flex:1;min-width:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.58 0.18 204);border-radius:7px;padding:8px 10px;color:oklch(0.92 0.015 228);font-size:12px;')}
               />
-              <div onClick={addMonthlyGoal} style={css('width:32px;height:32px;flex-shrink:0;border-radius:7px;background:oklch(0.58 0.18 204);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;box-shadow:' + GLOW_STRONG + ';')}>+</div>
+              <div className="elo-btn-hover" onClick={addMonthlyGoal} style={css('width:32px;height:32px;flex-shrink:0;border-radius:7px;background:oklch(0.58 0.18 204);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;box-shadow:' + GLOW_STRONG + ';')}>+</div>
             </div>
           )}
           <div style={css('display:flex;flex-direction:column;gap:8px;')}>
@@ -963,10 +983,12 @@ export default function HomeTab(props) {
                   <div style={css('flex:1;min-width:0;')}>{g.text}</div>
                 )}
                 <div
+                  className="elo-hover-pop"
                   onClick={() => startEditGoal(g.id)}
                   style={css('width:18px;height:18px;flex-shrink:0;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.5 0.025 228);font-size:10px;')}
                 >✎</div>
                 <div
+                  className="elo-hover-pop"
                   onClick={() => deleteGoal(g.id)}
                   style={css('width:18px;height:18px;flex-shrink:0;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:11px;')}
                 >✕</div>
@@ -998,6 +1020,7 @@ export default function HomeTab(props) {
                 <div style={css('font-size:10px;font-weight:600;color:oklch(0.65 0.025 228);background:oklch(0.12 0.06 240);padding:3px 7px;border-radius:5px;flex-shrink:0;')}>{item.kcal} kcal</div>
                 <div style={css('font-size:10px;font-weight:600;color:oklch(0.8 0.19 200);background:oklch(0.8 0.19 200 / 0.12);padding:3px 7px;border-radius:5px;flex-shrink:0;')}>{item.protein}p</div>
                 <div
+                  className="elo-hover-pop"
                   onClick={() => deleteFood(item.id)}
                   style={css('width:18px;height:18px;flex-shrink:0;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:11px;')}
                 >✕</div>
@@ -1016,7 +1039,7 @@ export default function HomeTab(props) {
               disabled={foodEstimating}
               style={css('flex:1;min-width:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.58 0.18 204);border-radius:7px;padding:8px 10px;color:oklch(0.92 0.015 228);font-size:12px;')}
             />
-            <div onClick={addFood} style={css('width:32px;height:32px;flex-shrink:0;border-radius:7px;background:oklch(0.58 0.18 204);display:flex;align-items:center;justify-content:center;cursor:' + (foodEstimating ? 'default' : 'pointer') + ';font-size:14px;box-shadow:' + GLOW_STRONG + ';opacity:' + (foodEstimating ? '0.5' : '1') + ';')}>+</div>
+            <div className={foodEstimating ? '' : 'elo-btn-hover'} onClick={addFood} style={css('width:32px;height:32px;flex-shrink:0;border-radius:7px;background:oklch(0.58 0.18 204);display:flex;align-items:center;justify-content:center;cursor:' + (foodEstimating ? 'default' : 'pointer') + ';font-size:14px;box-shadow:' + GLOW_STRONG + ';opacity:' + (foodEstimating ? '0.5' : '1') + ';')}>+</div>
           </div>
         </div>
 
@@ -1036,6 +1059,7 @@ export default function HomeTab(props) {
                   <div style={css('font-weight:500;flex:1;min-width:0;')}>{s.date}</div>
                   <div style={css('color:oklch(0.55 0.025 228);flex-shrink:0;')}>{s.hours}h{s.quality ? ' ' + SLEEP_QUALITY_EMOJI[s.quality] : ''}</div>
                   <div
+                    className="elo-hover-pop"
                     onClick={() => deleteSleep(s.id)}
                     style={css('width:18px;height:18px;flex-shrink:0;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:11px;')}
                   >✕</div>
@@ -1053,6 +1077,7 @@ export default function HomeTab(props) {
                   {[1, 2, 3, 4, 5].map((q) => (
                     <div
                       key={q}
+                      className="elo-btn-hover"
                       onClick={() => setSleepQualityInput(sleepQualityInput === q ? 0 : q)}
                       title={'Quality ' + q}
                       style={css(
@@ -1065,6 +1090,7 @@ export default function HomeTab(props) {
                   ))}
                 </div>
                 <div
+                  className="elo-btn-hover"
                   onClick={wakeUp}
                   style={css('font-size:11px;font-weight:700;letter-spacing:0.05em;padding:9px 16px;border-radius:8px;background:oklch(0.58 0.18 204);color:oklch(0.95 0.02 200);cursor:pointer;white-space:nowrap;box-shadow:' + GLOW_STRONG + ';')}
                 >☀️ WOKE UP</div>
@@ -1072,6 +1098,7 @@ export default function HomeTab(props) {
             </div>
           ) : (
             <div
+              className="elo-btn-hover"
               onClick={goToBed}
               style={css('width:100%;text-align:center;font-size:12px;font-weight:700;letter-spacing:0.05em;padding:12px;border-radius:8px;background:oklch(0.2 0.08 228);color:oklch(0.92 0.1 198);border:1px solid oklch(0.78 0.2 200);cursor:pointer;box-shadow:' + GLOW_STRONG + ';')}
             >🛏️ WENT TO BED</div>

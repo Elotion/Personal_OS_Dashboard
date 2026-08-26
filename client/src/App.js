@@ -96,6 +96,16 @@ function saveHabitStreak(streak) {
 // be reconciled against server data that's still loading async at mount --
 // far more fragile than restoring "which screen was I looking at," and much
 // lower value. Can be added later if that turns out to matter in practice.
+// Reuses the same nav-bar banner (tasksError) originally built for "backend
+// was down when the page first loaded" -- that effect only ever ran once on
+// mount, so a write that fails mid-session (backend crashes, wifi drops)
+// previously failed completely silently (optimistic UI + .catch(console.error)
+// with nothing shown to the user). Wiring CRM's write handlers to also set/
+// clear this same banner answers the 2026-08-26 UI/UX audit's own question
+// ("if submission fails, does the user know?") without building new toast
+// infrastructure -- the error surface already existed, it just wasn't
+// listening to the right failures.
+const WRITE_FAILED_MSG = 'Could not save that change — check your connection and try again.';
 const UI_STATE_KEY = 'elo-os-ui-state';
 const VALID_TABS = ['HOME', 'CRM', 'BRAIN', 'FINANCE', 'JOURNAL', 'HEALTH'];
 function loadUiState() {
@@ -474,7 +484,6 @@ export default function App() {
   const [categoryPickerId, setCategoryPickerId] = useState(null);
 
   // BRAIN state
-  const [brainFilter, setBrainFilter] = useState(initialUiState.brainFilter || 'Entity Dashboard');
   const [selectedEntityId, setSelectedEntityId] = useState(initialUiState.selectedEntityId ?? null);
   // No slide-in animation on a restored panel -- it should just already be
   // there, the same way it would look if the page had never reloaded.
@@ -552,7 +561,9 @@ export default function App() {
     setCrmTasks((ts) => {
       const next = ts.map((t) => (t.id === id ? { ...t, key: !t.key } : t));
       const updated = next.find((t) => t.id === id);
-      apiSend('/api/tasks/' + id, 'PUT', { is_key: updated.key }).catch((e) => console.error(e));
+      apiSend('/api/tasks/' + id, 'PUT', { is_key: updated.key })
+        .then(() => setTasksError(null))
+        .catch((e) => { console.error(e); setTasksError(WRITE_FAILED_MSG); });
       return next;
     });
   };
@@ -569,7 +580,9 @@ export default function App() {
     setTimeout(() => {
       setCrmTasks((ts) => ts.map((t) => (t.id === id ? { ...t, archived: true } : t)));
       setCrmFadingIds((f) => f.filter((x) => x !== id));
-      apiSend('/api/tasks/' + id, 'PUT', { is_archived: true }).catch((e) => console.error(e));
+      apiSend('/api/tasks/' + id, 'PUT', { is_archived: true })
+        .then(() => setTasksError(null))
+        .catch((e) => { console.error(e); setTasksError(WRITE_FAILED_MSG); });
     }, 260);
   };
   const restoreCrmTask = (id) => {
@@ -584,19 +597,23 @@ export default function App() {
       next.delete(id);
       return next;
     });
-    apiSend('/api/tasks/' + id, 'PUT', { is_archived: false }).catch((e) => console.error(e));
+    apiSend('/api/tasks/' + id, 'PUT', { is_archived: false })
+      .then(() => setTasksError(null))
+      .catch((e) => { console.error(e); setTasksError(WRITE_FAILED_MSG); });
   };
   const deleteCrmTask = (id) => {
     setCrmTasks((ts) => ts.filter((t) => t.id !== id));
-    fetch('/api/tasks/' + id, { method: 'DELETE' }).catch((e) => console.error(e));
+    fetch('/api/tasks/' + id, { method: 'DELETE' })
+      .then(() => setTasksError(null))
+      .catch((e) => { console.error(e); setTasksError(WRITE_FAILED_MSG); });
   };
   const submitCrmAdd = () => {
     const title = crmAddTitle.trim();
     if (!title) return;
     const entity_id = entityIdByName[crmAddEntity];
     apiSend('/api/tasks', 'POST', { title, entity_id, timeframe: crmAddTimeframe, is_key: crmAddIsKey })
-      .then((rows) => setCrmTasks((ts) => [transformTask(rows[0], crmAddEntity), ...ts]))
-      .catch((e) => console.error(e));
+      .then((rows) => { setCrmTasks((ts) => [transformTask(rows[0], crmAddEntity), ...ts]); setTasksError(null); })
+      .catch((e) => { console.error(e); setTasksError(WRITE_FAILED_MSG); });
     setCrmAddTitle('');
     setCrmAddIsKey(false);
     setCrmAddOpen(false);
@@ -1018,7 +1035,7 @@ export default function App() {
       habitsManageOpen, habitAddLabel, habitAddCategory, expandedHabitId,
       calendarManageOpen, weeklyGoalAddOpen, monthlyGoalAddOpen,
       crmView, crmSearch, crmAddOpen, crmAddTitle, crmAddTimeframe, crmAddEntity, crmAddIsKey, crmSmartText,
-      brainFilter, selectedEntityId, entityDetailOpen, entityNotes,
+      selectedEntityId, entityDetailOpen, entityNotes,
       journalViewMode, journalSearch, journalAddOpen, journalAddDate, journalAddRaw,
       journalInsightRangeDays, healthRangeDays,
     }));
@@ -1027,7 +1044,7 @@ export default function App() {
     habitsManageOpen, habitAddLabel, habitAddCategory, expandedHabitId,
     calendarManageOpen, weeklyGoalAddOpen, monthlyGoalAddOpen,
     crmView, crmSearch, crmAddOpen, crmAddTitle, crmAddTimeframe, crmAddEntity, crmAddIsKey, crmSmartText,
-    brainFilter, selectedEntityId, entityDetailOpen, entityNotes,
+    selectedEntityId, entityDetailOpen, entityNotes,
     journalViewMode, journalSearch, journalAddOpen, journalAddDate, journalAddRaw,
     journalInsightRangeDays, healthRangeDays,
   ]);
@@ -1267,6 +1284,7 @@ export default function App() {
             {tabs.map((name) => (
               <div
                 key={name}
+                className={name === activeTab ? '' : 'elo-row-hover'}
                 onClick={() => setActiveTab(name)}
                 style={css(
                   tabBase +
@@ -1348,7 +1366,6 @@ export default function App() {
       {activeTab === 'BRAIN' && (
         <BrainTab
           brainEntities={brainEntities} activeTasks={activeTasks}
-          brainFilter={brainFilter} setBrainFilter={setBrainFilter}
           openEntityDetail={openEntityDetail}
         />
       )}
