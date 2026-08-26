@@ -1180,6 +1180,41 @@ exactly this reason).
   404s. Close-up zoom verification hit the same screenshot-tool zoom+scroll
   quirk noted in the fourth follow-up -- relied on the full-page screenshot
   instead, which was sufficient to confirm correctness.
+  **Sixth follow-up (2026-08-26) -- full pivot to rings, line graphs removed
+  entirely.** After seeing the OTHER MACROS rings live, Elo asked for the
+  same treatment everywhere: "I like how the circle looks for other's
+  macro... let's do circles for calories protein and sugar as well, instead
+  of the line graph for sleep, let's do the circle as well, as well as the
+  macro in today's macro let's all use circle against goal so it looks
+  better and cleaner." This covered every remaining line-graph/bar usage in
+  the file (SLEEP, the 3 priority macros, and TODAY'S MACROS' bars), so
+  `HealthTab.js` was rewritten to drop the entire line-graph era --
+  `buildSparkline`, `Sparkline`, `MetricGraph`, `TrendBox`, `shortDate`, and
+  `MacroBar` all deleted outright rather than left unused, per this
+  project's standing dead-code convention.
+  `MacroRing` (the component built for OTHER MACROS two follow-ups ago)
+  gained two params to cover every remaining use case with one component:
+  `size` (scales the ring and all its text proportionally, since r=26 stays
+  fixed in the viewBox -- 84px for SLEEP's single hero ring, 64px for the 3
+  priority macros' averages, 40px for the 6-up TODAY grid, default 48px for
+  the secondary carbs/fat/fiber averages) and `valueLabel` (`'avg'` for the
+  NUTRITION section's range averages vs. `'today'` for the TODAY section's
+  same-day snapshot -- same ring, genuinely different underlying data, which
+  is a real improvement over the old design: TODAY and NUTRITION used to
+  show overlapping information in different visual languages, now they're
+  visually consistent AND meaningfully distinct in what they measure).
+  SLEEP's card also gained `display:flex;flex-direction:column` so its
+  single large ring can vertically center in a card that used to be filled
+  by a full graph -- an empty ring alone at the top of a tall card would
+  have looked sparse and unbalanced.
+  Verified live: full-page screenshot confirms all 4 zones -- SLEEP (one
+  large ring), TODAY (6 small rings in a grid, all reading 0/goal correctly
+  since it's a fresh day with nothing logged yet), NUTRITION (3 larger
+  rings + 3 smaller "OTHER MACROS" rings, fill percentages matching the
+  same real averages verified in the prior follow-up -- fiber's ring still
+  reads nearly full at 27g/28g), and DAY BY DAY unchanged. No new console
+  errors beyond the pre-existing `/api/profile` and `/api/health/goals`
+  404s.
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still
