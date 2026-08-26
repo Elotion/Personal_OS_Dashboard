@@ -1094,6 +1094,53 @@ exactly this reason).
   `/api/health/goals` 404s; confirmed via `read_network_requests` that
   `GET /api/health/goals` 404s cleanly and the app falls back to the
   localStorage defaults exactly as designed.
+  **Fourth follow-up (2026-08-26) -- match FINANCE PULSE's chart style, and a
+  full 4-zone layout rebuild.** Before running the `health_goals` migration,
+  Elo asked for a batch of layout/visual changes:
+  1. Match HOME's FINANCE PULSE chart exactly, not just "a line graph."
+     Read `buildNetWorthPaths`/the FINANCE PULSE `<svg>` in `HomeTab.js` --
+     the real technique there is a smooth bezier line PLUS a gradient-filled
+     area underneath (`<linearGradient>` from 35% opacity at the top fading
+     to 0%), not a bare stroke. `buildSparkline` (`HealthTab.js`) rebuilt to
+     return an `areas` path per line segment (closes each segment down to
+     the chart's own baseline), and `Sparkline` gained a per-instance
+     `<linearGradient>` (unique id via a module-level counter, since
+     multiple sparklines render on the page simultaneously -- FINANCE PULSE
+     only ever has exactly one, so it could get away with one hardcoded id).
+     Also matched FINANCE PULSE's exact stroke details (`strokeWidth="2"`,
+     `strokeLinejoin="round"`) instead of the slightly different values the
+     first HEALTH pass had used.
+  2. TODAY'S MACROS moved to the top-right, "so I can access it as soon as
+     possible when I enter the health tab" -- no longer buried mid-page
+     below the priority trend graphs.
+  3. OTHER MACROS (carbs/fat/fiber) explicitly called out as "talking way
+     too much space" -- `MetricGraph`, `TrendBox`, and `MacroBar` all gained
+     a `compact` flag that shrinks every dimension (padding, font sizes, and
+     the graph's own height down to 32px), and the grid went from
+     `minmax(260px,1fr)` to `minmax(150px,1fr)` so more fit per row.
+  4. A specific 4-zone spec: top-left = SLEEP, top-right = today's snapshot,
+     middle = full nutrient trend graphs, bottom = DAY BY DAY. HEALTH HABITS
+     wasn't assigned a zone in that spec -- Elo's follow-up ("move health
+     habits somewhere else unless you have a recommendation") left the call
+     to Claude. Folded it into the top-right card alongside TODAY'S MACROS
+     (both are glanceable "right now" stats, so they read as one natural
+     group, and it keeps top-left purely about sleep) rather than giving it
+     a fourth zone that wasn't asked for.
+  5. DAY BY DAY kept the pill-based macro display from the previous pass
+     (Elo: "I like how the day to day display") but flattened each row back
+     to a single skinny line -- date, then macros, then sleep, then habits,
+     left to right (`date---macros---sleep---habits`), instead of the
+     two-line date-header-then-wrapped-pills layout from before. Pills
+     themselves shrunk slightly (padding/font) so a typical day's worth fits
+     on one line without wrapping.
+  Verified live: DOM-inspected every chart's `<linearGradient>`/area-path
+  output directly (`querySelectorAll('linearGradient')`/`path[fill^="url"]`)
+  to confirm the gradient fill technique actually renders, since this
+  session's screenshot tool had recurring zoom+scroll issues that made
+  visual close-up verification unreliable -- same pragmatic workaround as
+  the `get_page_text` one three follow-ups up, applied to a different
+  verification problem. Confirmed no new console errors and no regression
+  on HOME (FINANCE PULSE itself untouched, just read for reference).
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still
