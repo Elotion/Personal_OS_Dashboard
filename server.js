@@ -827,6 +827,46 @@ app.post('/api/health/insight', async (req, res) => {
   }
 });
 
+// health_goals: singleton row (id=1), same pattern as habit_streak/profile --
+// captured once via an in-chat "interview" (physique goal, workout routine,
+// bodyweight/height/age -> Mifflin-St Jeor + activity factor for calories,
+// 1g/lb bodyweight for protein), editable later the same way profile fields
+// are. Graceful 404 pre-migration, same as every other singleton table here.
+const missingHealthGoalsTable = (error) => error && /health_goals/i.test(error.message || '');
+
+app.get('/api/health/goals', async (req, res) => {
+  const result = await supabase.from('health_goals').select('*').eq('id', 1).maybeSingle();
+  if (result.error) {
+    if (missingHealthGoalsTable(result.error)) return res.status(404).json({ error: 'health_goals table does not exist yet' });
+    console.error(result.error);
+    return res.status(400).json({ error: result.error.message });
+  }
+  res.json(result.data);
+});
+
+app.put('/api/health/goals', async (req, res) => {
+  const { calorie_goal, protein_goal, sugar_goal, physique_goal, workout_goal } = req.body;
+  const update = { updated_at: localTimestampStr(new Date()) };
+  if (calorie_goal !== undefined) update.calorie_goal = calorie_goal;
+  if (protein_goal !== undefined) update.protein_goal = protein_goal;
+  if (sugar_goal !== undefined) update.sugar_goal = sugar_goal;
+  if (physique_goal !== undefined) update.physique_goal = physique_goal;
+  if (workout_goal !== undefined) update.workout_goal = workout_goal;
+
+  let result = await supabase.from('health_goals').update(update).eq('id', 1).select();
+  if (missingHealthGoalsTable(result.error)) {
+    return res.status(404).json({ error: 'health_goals table does not exist yet' });
+  }
+  if (!result.error && (!result.data || result.data.length === 0)) {
+    result = await supabase.from('health_goals').insert([{ id: 1, ...update }]).select();
+  }
+  if (result.error) {
+    console.error(result.error);
+    return res.status(400).json({ error: result.error.message });
+  }
+  res.json(result.data);
+});
+
 // ---------------- GOOGLE CALENDAR ----------------
 // Phase 6: OAuth (Authorization Code flow) + a live "today's events" read,
 // no local sync/table yet -- HOME just needs today's real events in place of

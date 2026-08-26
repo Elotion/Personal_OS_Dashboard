@@ -411,6 +411,44 @@ CREATE TABLE habit_streak (
 -- sizes; would need revisiting if this ever needs to hold large images.
 -- express.json()'s body size limit was raised to 5mb in server.js to fit these.
 
+-- PENDING: health_goals table (HEALTH tab's personalized calorie/protein/
+-- sugar targets) does not exist yet. Same singleton-row pattern as
+-- habit_streak/profile above, same auto-upgrade behavior once created:
+--
+--   CREATE TABLE health_goals (
+--     id SERIAL PRIMARY KEY,
+--     calorie_goal INTEGER,
+--     protein_goal INTEGER,
+--     sugar_goal INTEGER,
+--     physique_goal TEXT,
+--     workout_goal TEXT,
+--     updated_at TIMESTAMP DEFAULT NOW()
+--   );
+--   ALTER TABLE health_goals ENABLE ROW LEVEL SECURITY;
+--   CREATE POLICY "Enable all for public" ON health_goals FOR ALL USING (true) WITH CHECK (true);
+--
+-- Values captured 2026-08-26 via an in-chat "interview" -- Elo asked
+-- specifically to be asked about physique/workout goals rather than raw
+-- macro numbers ("instead of asking what my macro's goal you should ask me
+-- about what my physique goal, workout goal, then determines how much
+-- macros i should target"): physique goal = lean recomposition / mini-bulk
+-- (build muscle while staying lean and athletic), workout = calisthenics
+-- 5-6x/week mixed cardio+strength plus occasional sport, 6'1", 175lbs, 20
+-- (about to turn 21), male. calorie_goal (3500) derived from Mifflin-St
+-- Jeor BMR (~1858 kcal) x a 1.8 activity factor (blend of "very active" and
+-- "extra active" given the training frequency) + 200 kcal for the
+-- mini-bulk. protein_goal (175) from the standard 1g-per-lb-bodyweight
+-- heuristic for muscle-building while staying lean. sugar_goal (50) is the
+-- general WHO/FDA reference limit, not biometric-derived -- flagged to Elo
+-- as such. These are estimates from standard formulas, explicitly not
+-- medical/dietitian advice -- HEALTH's NUTRITION card says so directly.
+-- Until this table exists: goals are editable and persist across a refresh
+-- via localStorage (key 'elo-os-health-goals'), same per-browser-only
+-- caveat and same auto-upgrade-with-no-code-change once the table exists as
+-- every other pending table here. App.js seeds the real interview values
+-- into Supabase automatically via PUT /api/health/goals the first time it
+-- loads after the table exists (not just on the next manual edit).
+
 CREATE TABLE goals (
   id SERIAL PRIMARY KEY,
   text TEXT NOT NULL,
@@ -991,6 +1029,71 @@ exactly this reason).
   `get_page_text` sidesteps this entirely since it reads the DOM regardless
   of scroll/viewport state -- worth reaching for that instead of fighting
   the screenshot tool if this recurs.
+  **Third follow-up (2026-08-26) -- personalized goals + reference lines +
+  decluttered DAY BY DAY.** Elo asked for six things in one message: (1)
+  box each macro's trend individually for readability; (2) drop MIN/MAX in
+  the stat box in favor of AVERAGE and a personal GOAL; (3) derive that goal
+  by interviewing him on physique/workout goals rather than asking for raw
+  macro numbers directly; (4) treat calories/protein/sugar as the 3 macros
+  that matter most, with calories' average specifically called out; (5) a
+  zero-line graph instead of a "No data yet" placeholder when there's no
+  data yet, reconstructing into a real line once data lands; (6) goal AND
+  average reference lines drawn on the calories/protein line graphs
+  themselves, not just in the stat box.
+  Interview: first pass at asking (AskUserQuestion, direct macro-number
+  options) was interrupted/dismissed -- Elo explicitly wants to be asked
+  about outcomes (physique goal, workout routine) and have Claude derive the
+  macro numbers, not be asked for the numbers directly. Re-asked with that
+  framing (physique goal, workout routine + frequency, bodyweight), then he
+  volunteered exact height/age/sex unprompted, letting the estimate move
+  from a rough bodyweight-multiplier heuristic to a real Mifflin-St Jeor BMR
+  calculation. See the `health_goals` PENDING migration note earlier in this
+  file for the exact numbers and formula.
+  Implementation (`HealthTab.js` rebuilt again, `App.js` gained the
+  healthGoals fetch/localStorage pair, `server.js` gained
+  `GET`/`PUT /api/health/goals`):
+  - `buildSparkline` rewritten to never return `null` -- when a series has
+    no real values it now renders a flat line at 0 (item 5) instead of the
+    caller showing a placeholder div, and gained an `extraScaleValues` param
+    so goal/average reference lines widen the y-axis instead of being
+    clipped when they're above the data's own range. Also now returns a
+    `toY` scale function so `Sparkline` can plot reference lines on the
+    exact same scale as the data.
+  - `Sparkline` gained a `refLines` prop -- dashed horizontal lines with a
+    text label, used for item 6.
+  - `MetricGraph`'s stat box changed from a 3-cell AVG/MIN/MAX grid to a
+    2-cell AVG/GOAL grid (item 2), and gained `goal`/`showRefLines` props.
+    Used for every metric now (SLEEP included, goal defaulted to a general
+    8-hour reference since Elo didn't ask for a personalized sleep goal).
+  - New `TrendBox` wraps each macro's `MetricGraph` in its own bordered box
+    (item 1).
+  - NUTRITION restructured into a "priority" grid (CALORIES/PROTEIN/SUGAR,
+    each boxed, each with `showRefLines`) above the existing TODAY'S MACROS
+    bars, then an "OTHER MACROS" grid (CARBS/FAT/FIBER, boxed, no reference
+    lines -- Elo didn't flag these as priorities) below. TODAY'S MACROS bars
+    now pull protein/sugar targets from `healthGoals` instead of the flat
+    FDA reference, while carbs/fat/fiber stay on the generic reference (item
+    4 -- only asked to personalize the 3 he cares about).
+  - New `MacroPill` component replaces DAY BY DAY's single " · "-joined
+    string with individually spaced, color-coded chips per macro (item 5's
+    "cluttered" complaint was actually about this row, not the graphs --
+    re-read carefully since the two "space it out" asks in the same message
+    were about two different UI elements).
+  **Real bug caught before shipping, not after:** GOAL and AVG reference
+  lines collided visually whenever the two values were close (e.g. sugar:
+  goal 50g vs. average 44g landed only ~7.7px apart on a 76px-tall graph,
+  same order as the ~8.5px font size). Caught by reading the actual rendered
+  `<text>` element `y` positions via `javascript_tool` rather than eyeballing
+  a screenshot (screenshots at this scale don't reliably show a 7px text
+  overlap). Fixed by always anchoring the GOAL label above its line and the
+  AVG label below its line (a `labelBelow` flag on the ref-line object) --
+  re-checked the same way afterward and confirmed a consistent ~15-22px gap
+  between labels regardless of how close the underlying values are.
+  Verified live: no console errors beyond the pre-existing, already-
+  documented `/api/profile` and (now also pre-migration, same pattern)
+  `/api/health/goals` 404s; confirmed via `read_network_requests` that
+  `GET /api/health/goals` 404s cleanly and the app falls back to the
+  localStorage defaults exactly as designed.
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still

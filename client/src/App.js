@@ -126,6 +126,43 @@ function transformProfile(row) {
   };
 }
 
+// HEALTH's personalized calorie/protein/sugar targets -- same localStorage-
+// first, Supabase-when-available pattern as profile above (health_goals
+// table doesn't exist until its own migration in CLAUDE.md is run). Values
+// captured 2026-08-26 via an in-chat "interview" (physique goal: lean
+// recomp/mini-bulk; workout: calisthenics 5-6x/week mixed cardio+strength
+// + occasional sport; 6'1", 175lbs, 20) -- calorieGoal from Mifflin-St Jeor
+// BMR x a 1.8 activity factor +200 for the mini-bulk, proteinGoal at 1g/lb
+// bodyweight, sugarGoal at the standard 50g/day general reference (not
+// biometric-derived). These are estimates from standard formulas, not
+// medical advice -- flagged as such in the UI, and editable later the same
+// click-to-edit way profile fields are.
+const HEALTH_GOALS_KEY = 'elo-os-health-goals';
+const DEFAULT_HEALTH_GOALS = {
+  calorieGoal: 3500, proteinGoal: 175, sugarGoal: 50,
+  physiqueGoal: 'Lean recomposition / mini-bulk -- build muscle while staying lean and athletic',
+  workoutGoal: 'Calisthenics, 5-6x/week, mixed cardio + strength, plus occasional sport',
+};
+function loadHealthGoals() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(HEALTH_GOALS_KEY));
+    if (parsed && typeof parsed === 'object') return { ...DEFAULT_HEALTH_GOALS, ...parsed };
+  } catch { /* fall through to default */ }
+  return DEFAULT_HEALTH_GOALS;
+}
+function saveHealthGoals(g) {
+  window.localStorage.setItem(HEALTH_GOALS_KEY, JSON.stringify(g));
+}
+function transformHealthGoals(row) {
+  return {
+    calorieGoal: row.calorie_goal ?? DEFAULT_HEALTH_GOALS.calorieGoal,
+    proteinGoal: row.protein_goal ?? DEFAULT_HEALTH_GOALS.proteinGoal,
+    sugarGoal: row.sugar_goal ?? DEFAULT_HEALTH_GOALS.sugarGoal,
+    physiqueGoal: row.physique_goal || DEFAULT_HEALTH_GOALS.physiqueGoal,
+    workoutGoal: row.workout_goal || DEFAULT_HEALTH_GOALS.workoutGoal,
+  };
+}
+
 function transformGoal(row) {
   return { id: row.id, text: row.text, timeframe: row.timeframe };
 }
@@ -232,6 +269,8 @@ export default function App() {
   const [editingProfileField, setEditingProfileField] = useState(null); // 'name' | 'tagline' | 'focus' | null
   const [editingProfileText, setEditingProfileText] = useState('');
 
+  const [healthGoals, setHealthGoals] = useState(() => loadHealthGoals());
+
   const [habits, setHabits] = useState([]);
   const [streak, setStreak] = useState(() => loadHabitStreak());
   const [streakBurst, setStreakBurst] = useState(false);
@@ -315,6 +354,27 @@ export default function App() {
         const fromServer = transformProfile(row);
         setProfile(fromServer);
         saveProfile(fromServer);
+      })
+      .catch(() => { /* table not there yet -- keep the localStorage/default value */ });
+
+    // same pattern once more for HEALTH's calorie/protein/sugar goals. If the
+    // table exists but has no row yet (first load after migration), seed it
+    // with the values already captured into localStorage from the interview,
+    // via the same PUT the edit UI uses -- so the real numbers land in
+    // Supabase the moment the table is available, not just on the next edit.
+    apiGet('/api/health/goals')
+      .then((row) => {
+        if (row) {
+          const fromServer = transformHealthGoals(row);
+          setHealthGoals(fromServer);
+          saveHealthGoals(fromServer);
+        } else {
+          const current = loadHealthGoals();
+          apiSend('/api/health/goals', 'PUT', {
+            calorie_goal: current.calorieGoal, protein_goal: current.proteinGoal, sugar_goal: current.sugarGoal,
+            physique_goal: current.physiqueGoal, workout_goal: current.workoutGoal,
+          }).catch((e) => console.error('health goals seed failed', e));
+        }
       })
       .catch(() => { /* table not there yet -- keep the localStorage/default value */ });
   }, []);
@@ -1321,6 +1381,7 @@ export default function App() {
           healthRangeDays={healthRangeDays} setHealthRangeDays={setHealthRangeDays}
           healthInsightText={healthInsightText} healthInsightGenerating={healthInsightGenerating}
           generateHealthInsight={generateHealthInsight}
+          healthGoals={healthGoals}
         />
       )}
 
