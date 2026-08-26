@@ -52,6 +52,22 @@ manual restart (Ctrl+C, then `npm start` again). Frontend **does** hot-reload �
 file is enough, no restart needed. Closing a Terminal window kills whatever process it was
 running; closing a browser tab does not affect the server at all.
 
+## Data note (2026-08-25): everything logged before tonight is test data
+Every habit completion, task, and nutrition entry logged up through 2026-08-25 was
+created while building/testing this app (development seeding, feature verification,
+etc.) — Elo's real day-to-day usage of this dashboard starts tonight (2026-08-25
+evening / 2026-08-26). **Do not treat pre-2026-08-26 history as a real behavioral
+pattern** in any AI-driven feature that reads historical data (BRAIN entity
+briefings, JOURNAL/HEALTH insights, `/api/analytics/*`) — a low habit-completion
+rate or sparse task history from this period reflects testing, not Elo's actual
+habits. Elo explicitly asked NOT to have this data bulk-deleted (his request walked
+back from "reset all logged data" to just "acknowledge that the past data...is not
+relevant" mid-message) — so the historical rows are still in Supabase, untouched;
+this is a framing note for interpretation, not a migration or cleanup that happened.
+If Elo asks for an actual purge later, that's a real destructive action (irreversible
+deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
+explicit go-ahead at that time, not an assumption that this note already covers it.
+
 ## Latest Session Summary (2026-08-23)
 **Completed this session:**
 - **Phase 1 — Security foundation.** `supabaseClient.js` now prefers
