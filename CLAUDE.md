@@ -911,6 +911,51 @@ exactly this reason).
   JOURNAL's INSIGHTS view); a real "greek yogurt with berries and granola"
   estimate returning distinct fiber/sugar numbers (4g fiber / 24g sugar), not
   a repeated constant.
+  **Follow-up (2026-08-25, later same day):** Elo asked HEALTH to actually show
+  the full macro breakdown (protein/carbs/fat/fiber/sugar, not just kcal) and
+  "utilize the space" with recommendation-style data, then asked for that as
+  real graphs, then asked for those graphs to follow the existing range picker
+  automatically. All three landed in one pass, since `getHealthContext` already
+  returned every macro per day (`lib/context.js`) -- this was a display gap, not
+  a data gap, no backend changes needed. `HealthTab.js`:
+  - The old sparse "CALORIES" card became "NUTRITION": kept its kcal number +
+    trend sparkline, added a "TODAY'S MACROS" bar-per-macro section (new
+    `MacroBar` component) comparing today's protein/carbs/fat/fiber/sugar
+    against the standard US nutrition-label %DV reference for a 2,000-kcal
+    diet (`MACRO_REFERENCE` -- labeled in the UI as a general reference, not
+    personalized advice), and a "MACRO TRENDS" section (new `MacroTrend`
+    component) with one small sparkline per macro across the selected range --
+    reuses the same `Sparkline`/`buildSparkline` machinery SLEEP and kcal
+    already used, just parameterized with a `height` prop for the smaller
+    size. Since all of these read from the same `healthData` prop the range
+    picker already drives, "update automatically with the range" needed zero
+    extra wiring -- confirmed live by switching to 7D and watching both the
+    label and a fresh `GET /api/health/data?days=7` fire immediately.
+  - HEALTH HABITS (previously bolted onto the bottom of the calories card) is
+    now its own card, since NUTRITION had gotten too tall to hold it
+    comfortably -- three cards in that row now (SLEEP / NUTRITION / HEALTH
+    HABITS), NUTRITION given `flex:2` so it gets proportionally more width for
+    its extra content.
+  - DAY BY DAY's per-row summary extended from `kcal · fiber` to all five
+    macros (`kcal · Xg protein · Xg carbs · Xg fat · Xg fiber · Xg sugar`,
+    each conditionally shown only when non-zero, matching the existing
+    pattern).
+  **Real bug hit and fixed during this pass:** the new components used `ref`
+  as a prop name for each macro's reference/target value (`<MacroBar ref={m.ref}>`)
+  -- `ref` is a reserved JSX prop that React intercepts for actual DOM/component
+  refs, not a normal prop, and passing a non-ref value through it threw
+  `Function components cannot have string refs` and crashed the whole HEALTH
+  tab (blank white error overlay). Caught immediately on the first live check
+  (not shipped blind), fixed by renaming the prop to `target` everywhere
+  (`MACRO_REFERENCE`'s key, `MacroBar`'s destructured prop, both call sites).
+  Re-verified via a **fresh browser tab** specifically -- the first re-check
+  after the fix still showed the old error in `read_console_messages`, which
+  turned out to be stale buffered console history from before the fix rather
+  than a real recurrence; a brand new tab confirmed the console was actually
+  clean (only the pre-existing, already-documented `GET /api/profile` 404).
+  Worth remembering: don't trust console-error persistence across a same-tab
+  reload as proof a fix didn't work -- verify with a fresh tab if the timing
+  is ambiguous.
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still
