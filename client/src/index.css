@@ -70,34 +70,54 @@ input:focus, textarea:focus, select:focus {
   filter: brightness(1.18);
 }
 
-/* Shared "major box" gradient-border glow (2026-08-25, replacing the earlier
-   box-shadow approximation). Elo supplied the exact reference technique: a
-   true gradient BORDER (not a glow drawn outside the box) built via the
-   classic mask-composite trick -- ::before paints a full radial gradient
-   over the box, then a content-box mask is XOR'd/excluded from it, leaving
-   only a 1px ring of that gradient as the actual border. ::after adds a
-   soft directional glow concentrated at the top edge. Both are
-   pointer-events:none so they never block clicks on the real card content
-   beneath them, and both use border-radius:inherit so they follow whatever
-   radius the panel itself sets (CARD in theme.js) -- unlike border-image,
-   which ignores border-radius entirely. Radial (not linear) gradient used
-   per Elo's own preference ("that's probably the version I'd use") --
-   brightest at top-center, fading toward the corners and much further by
-   the bottom, for the "lit from above" look rather than a flat top-to-
-   bottom bar. Requires the host element to have position:relative and a
-   matching border-radius, which CARD already sets. */
+/* Shared "major box" gradient-border glow (2026-08-25). Elo supplied a
+   reference technique (mask-composite gradient border via ::before, a
+   top-focused glow via ::after) plus his own hand-typed rgba color guess --
+   but he'd generated the reference LOOK with an image model, then wrote the
+   CSS afterward as his best visual approximation, not an extraction from
+   real code. So instead of trusting the hand-typed values, the actual PNG
+   he saved (`~/Downloads/Elo's Personal OS Dashboard/86dc8d40-....png`) was
+   sampled pixel-by-pixel with Pillow at the OPERATOR and HABITS box
+   borders, and the real numbers turned out meaningfully different from both
+   his guess and this file's prior version:
+     - top edge, center:    peak ~rgb(80,186,238)  (bright cyan)
+     - sides, mid-height:   ~rgb(1,17,40)           (nearly invisible --
+       far dimmer than either the top OR the bottom)
+     - bottom edge, center: ~rgb(2,90,145)          (moderate -- roughly
+       HALF the top's brightness, not the near-zero "0.08 opacity" his
+       hand-typed reference assumed)
+   In other words the real pattern isn't a monotonic top-to-bottom fade --
+   it's bright top and moderate bottom EDGES with the vertical SIDES being
+   the darkest part, like a frame with lit horizontal rails. The gradient
+   below is a direct fit to those three measured points (a linear gradient
+   carrying the vertical top/dim-middle/bottom curve, layered under a
+   smaller radial highlight that reproduces the top edge being brightest at
+   center and slightly dimmer at the corners, also confirmed by sampling).
+   ::before paints this over the whole box, then a content-box mask is
+   XOR'd/excluded from it, leaving only a 1px ring of it as the actual
+   border -- both pseudo-elements are pointer-events:none (never block
+   clicks) and border-radius:inherit (follow CARD's own radius, unlike
+   border-image which ignores border-radius entirely). Requires the host
+   element to have position:relative, which CARD already sets. If this ever
+   needs re-tuning against a new reference image, re-run the same sampling
+   approach (Pillow, scan a vertical/horizontal strip through a box's
+   border) rather than eyeballing it -- it caught real, non-obvious
+   differences from what eyeballing the same image had produced. */
 .elo-panel-glow::before {
   content: "";
   position: absolute;
   inset: 0;
   padding: 1px;
   border-radius: inherit;
-  background: radial-gradient(ellipse at 50% 0%,
-    rgba(110, 220, 255, 1) 0%,
-    rgba(45, 170, 235, 0.75) 30%,
-    rgba(18, 95, 165, 0.35) 60%,
-    rgba(5, 35, 70, 0.08) 100%
-  );
+  background:
+    radial-gradient(ellipse 85% 45% at 50% 0%, rgba(140, 220, 255, 0.4), transparent 65%),
+    linear-gradient(180deg,
+      rgba(80, 186, 238, 0.95) 0%,
+      rgba(45, 120, 180, 0.55) 8%,
+      rgba(14, 48, 82, 0.14) 42%,
+      rgba(14, 48, 82, 0.14) 58%,
+      rgba(28, 108, 158, 0.5) 100%
+    );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -111,7 +131,8 @@ input:focus, textarea:focus, select:focus {
   border-radius: inherit;
   pointer-events: none;
   box-shadow:
-    0 -2px 12px rgba(45, 190, 255, 0.20),
-    0 -6px 24px rgba(20, 130, 220, 0.10),
-    inset 0 1px 0 rgba(120, 225, 255, 0.22);
+    0 -1px 8px rgba(70, 190, 255, 0.18),
+    0 1px 5px rgba(40, 130, 190, 0.10),
+    inset 0 1px 0 rgba(140, 220, 255, 0.25),
+    inset 0 -1px 0 rgba(30, 110, 160, 0.15);
 }

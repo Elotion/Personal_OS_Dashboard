@@ -1180,6 +1180,36 @@ exactly this reason).
   tuning, adjust the rgba stops directly in `.elo-panel-glow::before`/`::after` in
   `index.css`, not the inline `CARD` string in `theme.js` (that string no longer
   controls border/glow at all, only fill/radius/position).
+- **Same-day follow-up: the gradient stops above got re-derived from real pixel data,
+  not eyeballing.** Elo's question ("why can't you just copy the coloring from the
+  model screenshot") was a fair challenge -- the prior pass's colors were a visual
+  estimate of an image only visible inline in chat, with no file to actually measure.
+  He then saved that reference PNG into `~/Downloads/Elo's Personal OS Dashboard/`,
+  which made real measurement possible: installed Pillow (`pip3 install --user
+  Pillow`) and scanned vertical/horizontal pixel strips through two different boxes'
+  borders (OPERATOR and HABITS, chosen since they're clear of overlapping UI).
+  **This directly contradicted the assumption both the third pass AND Elo's own
+  hand-typed reference CSS had made** -- that assumption was a simple monotonic
+  top-to-bottom fade (his reference's bottom stop was `rgba(..., 0.08)`, i.e. almost
+  invisible). The real pixels showed something different: brightest at the top edge
+  (~rgb(80,186,238)), then the vertical SIDES are the dimmest part of the whole
+  border (~rgb(1,17,40), confirmed at mid-height on both boxes), and the BOTTOM edge
+  is moderately bright again (~rgb(2,90,145) -- roughly half the top's brightness,
+  not a barely-visible one). In other words the real panel reads as a frame with lit
+  top and bottom horizontal rails and nearly-invisible vertical sides, not a single
+  vertical gradient. `.elo-panel-glow::before`'s gradient was rebuilt to fit these
+  three measured points directly (a `linear-gradient` carrying the bright-top /
+  dim-middle / moderate-bottom vertical curve, layered under a small `radial-gradient`
+  that reproduces the top edge being slightly brighter at center than at the corners,
+  which the same sampling also confirmed). `::after`'s outer glow was tuned down to
+  match the real (fairly modest) glow bleed measured on the page background just
+  above a box's top edge, and gained a matching bottom inset highlight instead of a
+  flat dark one, since the bottom edge turned out not to be dark. **Worth remembering
+  for next time a reference image needs matching:** if the image exists as an actual
+  file (ask Elo to save it if it's only inline in chat), sample it programmatically
+  (Pillow, or similar) rather than describing it by eye -- eyeballing missed a real,
+  non-obvious pattern (dim sides that are dimmer than BOTH edges) that direct
+  measurement caught immediately.
 
 ## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
 before it costs him a future fix-cycle, not a response to one specific report.
