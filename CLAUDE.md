@@ -1210,6 +1210,37 @@ exactly this reason).
   (Pillow, or similar) rather than describing it by eye -- eyeballing missed a real,
   non-obvious pattern (dim sides that are dimmer than BOTH edges) that direct
   measurement caught immediately.
+- **Second same-day follow-up: a distinct second effect was missing entirely.** After
+  seeing the border-ring fix live, Elo pointed out there's a separate thing the
+  reference has beyond the thin border line itself: "a little glow... glowing lights
+  going under, like inside the box... very very vibrant glow on the top... like a
+  stringy blue going downwards... they don't have it anywhere on the side or at the
+  bottom." That's real and it's a different effect from the border ring covered above
+  -- a genuinely vibrant cyan wash bleeding DOWN FROM the top edge INTO the box's own
+  interior fill, clearly visible when the reference PNG is cropped and viewed up
+  close (confirmed by eye across three different boxes -- OPERATOR, HABITS, and even
+  GOALS despite its separate custom styling -- so this is a shared characteristic of
+  the whole panel language, not one box's quirk). This had NOT been captured by the
+  border-ring work, since that only affects a 1px ring; the interior fill was still
+  the old, much fainter placeholder wash from the third pass. Measured properly this
+  time: sampled the MEDIAN pixel brightness across each row at increasing depth into
+  the OPERATOR box (median, not a single column, specifically to filter out bright
+  text/icon pixels contaminating the reading) -- the interior glow starts near the
+  border's own peak brightness right at the top edge, decays fast through the first
+  ~20% of the box's height, and is fully flat at the plain dark base color by ~48-50%
+  down, with nothing equivalent happening near the bottom. `CARD`'s inline
+  `background` (`theme.js`) was rebuilt from that measured curve -- a multi-stop
+  `linear-gradient` fading from the peak color at 0% down to fully transparent by
+  50%, layered on top of (not replacing) the plain solid base card color, so anything
+  below ~50% height renders pixel-identical to before this change and the glow is
+  purely additive above that line. This is the one instance in this whole styling
+  arc where Elo's own earlier instruction ("don't alter the background, only the
+  border/glow treatment") was deliberately superseded -- his own later, more specific
+  description of the reference made clear the background/interior fill was in scope
+  after all; when a later, more specific instruction conflicts with an earlier general
+  one on the same feature, the later one wins. Verified live across HOME and BRAIN --
+  visibly matches the reference crop's vibrant top-down wash, fading to the ordinary
+  dark card color by mid-box, with GOALS correctly untouched (separate style).
 
 ## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
 before it costs him a future fix-cycle, not a response to one specific report.

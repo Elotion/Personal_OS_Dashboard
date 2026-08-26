@@ -31,24 +31,36 @@ export const GLOW_STRONG =
 // pills, individual task/habit rows -- those keep their own inline styles),
 // per Elo's explicit request.
 //
-// The border/glow itself (2026-08-25, final pass) is NOT part of this
-// inline string -- Elo supplied the exact CSS technique he wanted (a real
-// mask-composite gradient border plus a top-focused glow), and pseudo-
+// The border ring/outer glow is NOT part of this inline string -- pseudo-
 // elements (::before/::after) can't be expressed through this codebase's
 // inline `css()` helper, only through a real class. That class is
 // `CARD_CLASS` (defined here, implemented in index.css as `.elo-panel-glow`)
 // -- every CARD consumer must add `className={CARD_CLASS}` alongside this
-// style string for the border/glow to actually render. This inline string
-// only carries what a plain inline style CAN express: the interior fill
-// (a faint top-lit gradient wash, left as-is per Elo's explicit "don't
-// alter the background, only the border/glow treatment"), a transparent
-// placeholder border (keeps the box-model identical to when a real 1px
-// border was set here, so nothing shifts by a pixel now that the visible
-// border moved to the pseudo-element), border-radius, and position:relative
-// (required so the pseudo-elements, which are position:absolute, anchor to
-// this box and not some further-out ancestor).
+// style string for the border ring to actually render.
+//
+// The interior fill IS part of this inline string, and it was rebuilt
+// (2026-08-25, same pixel-sampling pass as the border ring) after Elo
+// pointed out the reference has a second, separate effect beyond the thin
+// border line: "a little glow... glowing lights going under, like inside
+// the box... very vibrant glow on the top... stringy blue going downward
+// ... they don't have it anywhere on the side or at the bottom." That's a
+// real, distinct thing from the border ring -- a genuinely bright cyan wash
+// bleeding down from the TOP EDGE into the box interior, fully faded to the
+// plain dark base color by roughly halfway down, with no equivalent glow
+// bleeding in from the sides or bottom. Measured directly (median pixel
+// brightness across rows at increasing depth into the OPERATOR box,
+// filtered to ignore text/icons): interior brightness starts near the
+// border's own peak color right at the top edge, decays fast through the
+// first ~20% of the box height, and is fully flat at the dark floor color
+// by ~48-50% -- the multi-stop gradient below is a direct fit to that
+// measured curve, layered as a fading-to-transparent overlay on top of the
+// plain base card color (so below ~50% height it's pixel-identical to the
+// old flat background, and the glow is purely additive above that).
 export const CARD_CLASS = 'elo-panel-glow';
 
 export const CARD =
-  'position:relative;background:linear-gradient(to bottom, oklch(0.19 0.06 236), oklch(0.145 0.055 240) 55%);' +
+  'position:relative;background:' +
+  'linear-gradient(to bottom, rgba(80,172,228,0.85) 0%, rgba(20,80,130,0.55) 6%, ' +
+  'rgba(7,48,90,0.32) 16%, rgba(3,26,56,0.16) 32%, rgba(0,10,28,0) 50%), ' +
+  'oklch(0.145 0.055 240);' +
   'border:1px solid transparent;border-radius:14px;';
