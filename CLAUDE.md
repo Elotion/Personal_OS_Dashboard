@@ -2215,15 +2215,28 @@ from.
    **Update 2026-08-25:** the GitHub remote is now set up (`github.com/Elotion/
    Personal_OS_Dashboard`, SSH key auth, "Push to GitHub after committing" is now a
    standing process rule above) -- Railway can deploy from it once hosting actually
-   starts. Elo is separately in the middle of creating an Oracle Cloud account (an
+   starts. Elo was separately in the middle of creating an Oracle Cloud account (an
    always-free-tier VM, an alternative to Railway being considered) -- that signup
-   was still in progress and deliberately paused mid-flight so work could move on to
-   the next roadmap phase (this was Elo's explicit call: "let's put deployment to the
-   last step ... let's focus on the next phase right now"), not abandoned. Whichever
-   host is used, **still needed:** the actual hosting account finished/chosen,
-   environment variables set in that host's dashboard (not a committed `.env`), and
-   updating Google Cloud Console's OAuth redirect URI once the real production URL is
-   known.
+   was paused mid-flight, not abandoned, at that point.
+   **Update 2026-08-26: Oracle dropped, Railway confirmed as the host.** Elo's own
+   call ("let's give up on oracle and do the other one that needs to pay") --
+   Oracle's always-free tier kept adding friction (account verification/approval
+   steps are known to be inconsistent), and Railway was already the architecturally
+   -preferred choice from the original decision above (single process, no separate
+   frontend host, no CORS config). Paying for Railway trades a bit of monthly cost
+   for a setup that just works, which is the right trade for a personal daily-use
+   tool. Still needed, and these need Elo himself (account creation + payment can't
+   be done on his behalf): create the Railway account, connect it to the
+   `Elotion/Personal_OS_Dashboard` GitHub repo, set every var from the `.env`
+   Credentials section above in Railway's dashboard (not a committed `.env` --
+   Railway's env var UI, one at a time) plus `NODE_ENV=production`, deploy, then
+   once the real Railway URL is known: set `PUBLIC_URL`/`FRONTEND_URL` to that URL
+   in Railway's env vars, and update the redirect URI in Google Cloud Console's
+   OAuth client config to match (currently
+   `http://localhost:5050/api/integrations/google/callback` -- needs the real
+   `https://<railway-url>/api/integrations/google/callback`). Code side is already
+   done and locally verified (see above) -- nothing else to build before this can
+   go live.
 9. **Finance** (last, deliberately — most complex, most sensitive data) — live data from
    multiple financial/investment accounts, feeding both the existing (currently
    hardcoded) Finance Pulse widget on HOME and a full Finance tab that doesn't exist yet.
