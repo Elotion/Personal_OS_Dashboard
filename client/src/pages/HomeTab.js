@@ -694,7 +694,28 @@ export default function HomeTab(props) {
             <span style={css('font-size:11px;font-weight:800;letter-spacing:0.1em;color:' + GOLD + ';')}>GOALS</span>
           </div>
 
-          <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);margin-bottom:8px;')}>THIS WEEK</div>
+          <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;')}>
+            <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);')}>THIS WEEK</div>
+            {weeklyGoals.length > 0 && !weeklyGoalAddOpen && (
+              <div
+                onClick={() => setWeeklyGoalAddOpen(true)}
+                style={css('width:20px;height:20px;border-radius:6px;background:oklch(0.12 0.06 240);border:1px solid oklch(0.4 0.08 220);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;color:oklch(0.6 0.025 228);flex-shrink:0;')}
+              >+</div>
+            )}
+          </div>
+          {(weeklyGoals.length === 0 || weeklyGoalAddOpen) && (
+            <div style={css('display:flex;gap:8px;margin-bottom:8px;')}>
+              <input
+                autoFocus={weeklyGoals.length > 0}
+                value={weeklyInput}
+                onChange={(e) => setWeeklyInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') addWeeklyGoal(); if (e.key === 'Escape') setWeeklyGoalAddOpen(false); }}
+                placeholder="Add a weekly goal"
+                style={css('flex:1;min-width:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.58 0.18 204);border-radius:7px;padding:8px 10px;color:oklch(0.92 0.015 228);font-size:12px;')}
+              />
+              <div onClick={addWeeklyGoal} style={css('width:32px;height:32px;flex-shrink:0;border-radius:7px;background:oklch(0.58 0.18 204);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;box-shadow:' + GLOW_STRONG + ';')}>+</div>
+            </div>
+          )}
           <div style={css('display:flex;flex-direction:column;gap:8px;margin-bottom:16px;')}>
             {weeklyGoals.map((g) => (
               <div key={g.id} style={css('display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;padding:10px 12px;background:oklch(0.12 0.06 240);border-left:3px solid ' + GOLD + ';border-radius:7px;box-shadow:' + GLOW_MED + ';')}>
@@ -720,27 +741,30 @@ export default function HomeTab(props) {
                 >✕</div>
               </div>
             ))}
-            {weeklyGoals.length === 0 || weeklyGoalAddOpen ? (
-              <div style={css('display:flex;gap:8px;')}>
-                <input
-                  autoFocus={weeklyGoals.length > 0}
-                  value={weeklyInput}
-                  onChange={(e) => setWeeklyInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') addWeeklyGoal(); if (e.key === 'Escape') setWeeklyGoalAddOpen(false); }}
-                  placeholder="Add a weekly goal"
-                  style={css('flex:1;min-width:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.58 0.18 204);border-radius:7px;padding:8px 10px;color:oklch(0.92 0.015 228);font-size:12px;')}
-                />
-                <div onClick={addWeeklyGoal} style={css('width:32px;height:32px;flex-shrink:0;border-radius:7px;background:oklch(0.58 0.18 204);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;box-shadow:' + GLOW_STRONG + ';')}>+</div>
-              </div>
-            ) : (
+          </div>
+
+          <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;')}>
+            <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);')}>THIS MONTH</div>
+            {monthlyGoals.length > 0 && !monthlyGoalAddOpen && (
               <div
-                onClick={() => setWeeklyGoalAddOpen(true)}
-                style={css('width:32px;height:32px;border-radius:7px;background:oklch(0.12 0.06 240);border:1px solid oklch(0.4 0.08 220);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:oklch(0.6 0.025 228);')}
+                onClick={() => setMonthlyGoalAddOpen(true)}
+                style={css('width:20px;height:20px;border-radius:6px;background:oklch(0.12 0.06 240);border:1px solid oklch(0.4 0.08 220);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;color:oklch(0.6 0.025 228);flex-shrink:0;')}
               >+</div>
             )}
           </div>
-
-          <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);margin-bottom:8px;')}>THIS MONTH</div>
+          {(monthlyGoals.length === 0 || monthlyGoalAddOpen) && (
+            <div style={css('display:flex;gap:8px;margin-bottom:8px;')}>
+              <input
+                autoFocus={monthlyGoals.length > 0}
+                value={monthlyInput}
+                onChange={(e) => setMonthlyInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') addMonthlyGoal(); if (e.key === 'Escape') setMonthlyGoalAddOpen(false); }}
+                placeholder="Add a monthly goal"
+                style={css('flex:1;min-width:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.58 0.18 204);border-radius:7px;padding:8px 10px;color:oklch(0.92 0.015 228);font-size:12px;')}
+              />
+              <div onClick={addMonthlyGoal} style={css('width:32px;height:32px;flex-shrink:0;border-radius:7px;background:oklch(0.58 0.18 204);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;box-shadow:' + GLOW_STRONG + ';')}>+</div>
+            </div>
+          )}
           <div style={css('display:flex;flex-direction:column;gap:8px;')}>
             {monthlyGoals.map((g) => (
               <div key={g.id} style={css('display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;padding:10px 12px;background:oklch(0.12 0.06 240);border-left:3px solid ' + GOLD + ';border-radius:7px;box-shadow:' + GLOW_MED + ';')}>
@@ -766,24 +790,6 @@ export default function HomeTab(props) {
                 >✕</div>
               </div>
             ))}
-            {monthlyGoals.length === 0 || monthlyGoalAddOpen ? (
-              <div style={css('display:flex;gap:8px;')}>
-                <input
-                  autoFocus={monthlyGoals.length > 0}
-                  value={monthlyInput}
-                  onChange={(e) => setMonthlyInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') addMonthlyGoal(); if (e.key === 'Escape') setMonthlyGoalAddOpen(false); }}
-                  placeholder="Add a monthly goal"
-                  style={css('flex:1;min-width:0;background:oklch(0.12 0.06 240);border:1px solid oklch(0.58 0.18 204);border-radius:7px;padding:8px 10px;color:oklch(0.92 0.015 228);font-size:12px;')}
-                />
-                <div onClick={addMonthlyGoal} style={css('width:32px;height:32px;flex-shrink:0;border-radius:7px;background:oklch(0.58 0.18 204);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;box-shadow:' + GLOW_STRONG + ';')}>+</div>
-              </div>
-            ) : (
-              <div
-                onClick={() => setMonthlyGoalAddOpen(true)}
-                style={css('width:32px;height:32px;border-radius:7px;background:oklch(0.12 0.06 240);border:1px solid oklch(0.4 0.08 220);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:oklch(0.6 0.025 228);')}
-              >+</div>
-            )}
           </div>
         </div>
 

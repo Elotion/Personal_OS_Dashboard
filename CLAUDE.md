@@ -916,7 +916,15 @@ exactly this reason).
     in `App.js`, included in the same UI-state persistence blob as everything else on
     this page. Verified live: with both sections already populated, both collapsed to
     `+` buttons on load; clicking one revealed the input; Escape collapsed it again
-    with nothing added.
+    with nothing added. **Immediate follow-up, same day:** Elo asked for that collapsed
+    `+` to live in the section header (top-right, next to "THIS WEEK"/"THIS MONTH")
+    rather than below the goal list where it originally landed. Moved it there, and
+    moved the reveal-on-click input to sit right under the header (above the goal
+    list, not below it) -- keeps the input spatially next to the button that reveals
+    it rather than appearing far below all the goal rows. The old bottom-of-list
+    block is gone entirely, not just hidden. Verified live: `+` now renders inline
+    with each header label; clicking it opens the input directly beneath the header;
+    Escape collapses it again.
 
 ## Full-app audit (2026-08-25) -- Elo asked for a systematic pass to catch anything
 before it costs him a future fix-cycle, not a response to one specific report.
