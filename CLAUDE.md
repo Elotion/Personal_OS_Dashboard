@@ -956,6 +956,41 @@ exactly this reason).
   Worth remembering: don't trust console-error persistence across a same-tab
   reload as proof a fix didn't work -- verify with a fresh tab if the timing
   is ambiguous.
+  **Second follow-up (2026-08-25, same day):** Elo asked for real line graphs
+  (not tiny sparklines) for both sleep and every nutrient, with boxed,
+  bigger-font trend details underneath each one. New shared `MetricGraph`
+  component (`HealthTab.js`) replaces the old small `MacroTrend` -- renders a
+  label + latest-value header, a full-size line graph (reuses the existing
+  `Sparkline`, which gained a `height` prop so it can be sized per use: 90px
+  for SLEEP/CALORIES, 64px for the 5 macro trends), and underneath that a
+  boxed AVG/MIN/MAX row computed from the same series, in a 3-column grid
+  with real dividers (1px gap + matching background color between cells, so
+  the divider lines have clean rounded corners instead of individual
+  per-cell borders) and much larger stat numbers (19-22px vs. the previous
+  9-12px). Used for SLEEP's hours-slept graph, NUTRITION's calories graph,
+  and all 5 macro trend graphs -- one consistent treatment everywhere
+  instead of one style for sleep/calories and a cramped different one for
+  macros. Layout also reshuffled: SLEEP and HEALTH HABITS now share a row
+  (SLEEP wider, since it carries the graph), and NUTRITION moved to its own
+  full-width row below since it now holds six graphs (calories + 5 macros)
+  plus the TODAY'S MACROS reference-bar section -- trying to keep all of
+  that in a cramped side-by-side card would've been unreadable. Verified
+  live via `get_page_text` (this session's screenshot tool had an unrelated
+  scroll/viewport quirk in this specific test -- see below -- so the DOM
+  text extraction was used as the more reliable check) that every section
+  renders in order with correct real numbers: SLEEP's AVG/MIN/MAX (empty,
+  no sleep data logged yet), NUTRITION's CALORIES AVG 1630/MIN 750/MAX 2510,
+  and all 5 macros' own AVG/MIN/MAX boxes.
+  **Unrelated tooling note, not an app bug:** this session's browser-
+  automation `scroll` action stopped visibly moving the page partway through
+  verification, and `.elo-scroll`'s own `scrollHeight`/`clientHeight` were
+  reported equal (i.e. nothing to scroll internally) even though the content
+  was clearly taller than the viewport -- turned out to be a page-level
+  scroll (`window.scrollTo`/`document.body.scrollHeight`) that the
+  screenshot tool wasn't reflecting in this session, not a real layout bug.
+  `get_page_text` sidesteps this entirely since it reads the DOM regardless
+  of scroll/viewport state -- worth reaching for that instead of fighting
+  the screenshot tool if this recurs.
 
 ## Decisions worth knowing before touching this code
 - **HOME's key-task checkbox archives the task, full stop** — no separate "done but still

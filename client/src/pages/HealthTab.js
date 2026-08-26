@@ -60,18 +60,44 @@ function Sparkline({ values, color, height = 64 }) {
   );
 }
 
-// Small labeled sparkline + latest value, used for the per-macro trend grid
-// (protein/carbs/fat/fiber/sugar over the selected day range) -- same
-// Sparkline component as SLEEP/CALORIES, just smaller and with a label row.
-function MacroTrend({ label, values, unit, color }) {
+// A full line graph + a boxed, large-font trend-stats row underneath (AVG /
+// MIN / MAX over whatever range is currently selected) -- shared by SLEEP,
+// CALORIES, and every macro so all of HEALTH's graphs read the same way,
+// per Elo's request for bigger, more legible trend detail under each line
+// graph rather than the small inline numbers the first pass used. The stats
+// grid uses the "1px gap + matching background" trick for hairline dividers
+// between cells instead of individual borders (cleaner corners with
+// border-radius on the outer grid).
+function MetricGraph({ label, values, unit, color, height = 90, decimals = 0 }) {
+  const known = values.filter((v) => v != null);
   const latest = [...values].reverse().find((v) => v != null);
+  const avg = known.length ? known.reduce((s, v) => s + v, 0) / known.length : null;
+  const min = known.length ? Math.min(...known) : null;
+  const max = known.length ? Math.max(...known) : null;
+  const fmt = (v) => (v == null ? '—' : decimals ? v.toFixed(decimals) : Math.round(v));
+
   return (
-    <div style={css('display:flex;flex-direction:column;gap:6px;')}>
+    <div style={css('display:flex;flex-direction:column;gap:14px;')}>
       <div style={css('display:flex;align-items:baseline;justify-content:space-between;')}>
-        <div style={css('font-size:9px;font-weight:700;letter-spacing:0.07em;color:oklch(0.55 0.025 228);')}>{label}</div>
-        <div style={css('font-size:12px;font-weight:700;color:oklch(0.85 0.02 228);')}>{latest != null ? Math.round(latest) : '—'}<span style={css('font-size:9px;font-weight:500;color:oklch(0.5 0.025 228);')}>{unit}</span></div>
+        <div style={css('font-size:12px;font-weight:700;letter-spacing:0.07em;color:oklch(0.62 0.03 228);')}>{label}</div>
+        <div style={css('font-size:22px;font-weight:800;color:oklch(0.94 0.015 228);')}>
+          {fmt(latest)}<span style={css('font-size:12px;font-weight:500;color:oklch(0.55 0.025 228);')}> {unit}</span>
+        </div>
       </div>
-      <Sparkline values={values} color={color} height={36} />
+      <Sparkline values={values} color={color} height={height} />
+      <div style={css(
+        'display:grid;grid-template-columns:repeat(3, 1fr);gap:1px;border-radius:10px;overflow:hidden;' +
+        'background:oklch(0.32 0.07 222);border:1px solid oklch(0.32 0.07 222);'
+      )}>
+        {[['AVG', avg], ['MIN', min], ['MAX', max]].map(([lbl, val]) => (
+          <div key={lbl} style={css('background:oklch(0.105 0.05 238);padding:12px 8px;text-align:center;')}>
+            <div style={css('font-size:9.5px;font-weight:700;letter-spacing:0.09em;color:oklch(0.5 0.025 228);margin-bottom:6px;')}>{lbl}</div>
+            <div style={css('font-size:19px;font-weight:800;color:oklch(0.9 0.02 228);')}>
+              {fmt(val)}<span style={css('font-size:10px;font-weight:500;color:oklch(0.5 0.025 228);')}>{val != null ? unit : ''}</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -138,10 +164,6 @@ export default function HealthTab({
 }) {
   const sleepHours = healthData.map((d) => d.sleep_hours);
   const kcalSeries = healthData.map((d) => (d.kcal > 0 ? d.kcal : null));
-  const avgSleep = (() => {
-    const known = sleepHours.filter((v) => v != null);
-    return known.length ? (known.reduce((s, v) => s + v, 0) / known.length).toFixed(1) : null;
-  })();
   const latestHabitDay = [...healthData].reverse().find((d) => d.health_habits_total > 0);
 
   return (
@@ -165,75 +187,30 @@ export default function HealthTab({
       </div>
 
       <div style={css('display:flex;gap:16px;flex-wrap:wrap;')}>
-        {/* SLEEP */}
-        <div className={CARD_CLASS} style={css(CARD + 'padding:18px;flex:1 1 320px;min-width:280px;')}>
-          <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;')}>
-            <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>SLEEP</div>
-            <div style={css('font-size:9px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>{healthRangeDays}-DAY AVG</div>
-          </div>
-          <div style={css('font-size:26px;font-weight:800;margin-bottom:10px;')}>
-            {avgSleep != null ? avgSleep : '—'} <span style={css('font-size:11px;font-weight:500;color:oklch(0.55 0.025 228);')}>hrs</span>
+        {/* SLEEP -- full line graph + boxed AVG/MIN/MAX trend details
+            underneath, bigger font throughout (2026-08-25, per Elo: "line
+            graphs for both sleep and nutrient, and trend details underneath
+            the line graph... box the trend sections and make the font
+            bigger"). */}
+        <div className={CARD_CLASS} style={css(CARD + 'padding:22px;flex:2 1 380px;min-width:340px;')}>
+          <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;')}>
+            <div style={css('font-size:14px;font-weight:800;letter-spacing:0.03em;')}>🌙 SLEEP</div>
+            <div style={css('font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>{healthRangeDays}-DAY TREND</div>
           </div>
           {healthDataLoading ? (
-            <div style={css('height:64px;display:flex;align-items:center;justify-content:center;color:oklch(0.5 0.025 228);font-size:11.5px;')}>Loading…</div>
+            <div style={css('height:90px;display:flex;align-items:center;justify-content:center;color:oklch(0.5 0.025 228);font-size:11.5px;')}>Loading…</div>
           ) : (
-            <Sparkline values={sleepHours} color="oklch(0.62 0.2 235)" />
+            <MetricGraph label="HOURS SLEPT" values={sleepHours} unit="hrs" color="oklch(0.62 0.2 235)" height={90} decimals={1} />
           )}
         </div>
 
-        {/* NUTRITION -- calories + full macro breakdown (protein, carbs, fat,
-            fiber, sugar), each shown against a general 2,000-kcal-diet
-            reference (the same %DV baseline every US nutrition label uses),
-            not personalized advice. Widened (min 360px vs the old 280px)
-            since it now carries a lot more than just the kcal trend. */}
-        <div className={CARD_CLASS} style={css(CARD + 'padding:18px;flex:2 1 360px;min-width:340px;')}>
-          <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;')}>
-            <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>NUTRITION</div>
-            <div style={css('font-size:9px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>{healthRangeDays}-DAY TREND</div>
-          </div>
-          <div style={css('font-size:26px;font-weight:800;margin-bottom:10px;')}>
-            {healthData.length ? healthData[healthData.length - 1].kcal : 0} <span style={css('font-size:11px;font-weight:500;color:oklch(0.55 0.025 228);')}>kcal today</span>
-          </div>
-          {healthDataLoading ? (
-            <div style={css('height:64px;display:flex;align-items:center;justify-content:center;color:oklch(0.5 0.025 228);font-size:11.5px;')}>Loading…</div>
-          ) : (
-            <Sparkline values={kcalSeries} color="oklch(0.86 0.17 195)" />
-          )}
-
-          <div style={css('margin-top:16px;display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px;')}>
-            <div style={css('font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.55 0.025 228);')}>TODAY'S MACROS</div>
-            <div style={css('font-size:8.5px;color:oklch(0.45 0.025 228);')}>vs. general 2,000-kcal reference</div>
-          </div>
-          <div style={css('display:grid;grid-template-columns:repeat(2, 1fr);gap:12px 20px;')}>
-            {MACRO_REFERENCE.map((m) => (
-              <MacroBar key={m.key} label={m.label} unit={m.unit} target={m.target} color={m.color}
-                value={healthData.length ? healthData[healthData.length - 1][m.key] || 0 : 0} />
-            ))}
-          </div>
-
-          <div style={css('margin-top:18px;font-size:9px;font-weight:700;letter-spacing:0.08em;color:oklch(0.55 0.025 228);margin-bottom:12px;')}>
-            MACRO TRENDS · {healthRangeDays}D
-          </div>
-          <div style={css('display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:16px;')}>
-            {healthDataLoading ? (
-              <div style={css('color:oklch(0.5 0.025 228);font-size:11.5px;')}>Loading…</div>
-            ) : (
-              MACRO_REFERENCE.map((m) => (
-                <MacroTrend key={m.key} label={m.label} unit={m.unit} color={m.color}
-                  values={healthData.map((d) => (d[m.key] > 0 ? d[m.key] : null))} />
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* HEALTH HABITS -- split into its own card (was nested inside
-            NUTRITION) now that NUTRITION carries the full macro breakdown. */}
-        <div className={CARD_CLASS} style={css(CARD + 'padding:18px;flex:1 1 220px;min-width:200px;')}>
-          <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);margin-bottom:14px;')}>HEALTH HABITS</div>
+        {/* HEALTH HABITS */}
+        <div className={CARD_CLASS} style={css(CARD + 'padding:22px;flex:1 1 220px;min-width:200px;')}>
+          <div style={css('font-size:14px;font-weight:800;letter-spacing:0.03em;margin-bottom:18px;')}>HEALTH HABITS</div>
           {latestHabitDay ? (
-            <div style={css('display:flex;flex-direction:column;gap:10px;')}>
-              <div style={css('font-size:26px;font-weight:800;')}>
-                {latestHabitDay.health_habits_completed}<span style={css('font-size:15px;font-weight:600;color:oklch(0.55 0.025 228);')}>/{latestHabitDay.health_habits_total}</span>
+            <div style={css('display:flex;flex-direction:column;gap:12px;')}>
+              <div style={css('font-size:30px;font-weight:800;')}>
+                {latestHabitDay.health_habits_completed}<span style={css('font-size:16px;font-weight:600;color:oklch(0.55 0.025 228);')}>/{latestHabitDay.health_habits_total}</span>
               </div>
               <div style={css('height:8px;border-radius:4px;background:oklch(0.12 0.06 240);overflow:hidden;')}>
                 <div style={css(
@@ -243,11 +220,58 @@ export default function HealthTab({
                     : 0) + '%;'
                 )} />
               </div>
-              <div style={css('font-size:11px;color:oklch(0.55 0.025 228);')}>completed today</div>
+              <div style={css('font-size:12px;color:oklch(0.55 0.025 228);')}>completed today</div>
             </div>
           ) : (
             <div style={css('color:oklch(0.5 0.025 228);font-size:11.5px;')}>No HEALTH-entity habits set up yet.</div>
           )}
+        </div>
+
+        {/* NUTRITION -- calories as a full line graph + trend details, then
+            today's macros vs. a general 2,000-kcal-diet reference (the same
+            %DV baseline every US nutrition label uses, not personalized
+            advice), then a full line graph + trend details per macro. Full
+            width (its own row) since it now carries six graphs. */}
+        <div className={CARD_CLASS} style={css(CARD + 'padding:22px;flex:1 1 100%;')}>
+          <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;')}>
+            <div style={css('font-size:14px;font-weight:800;letter-spacing:0.03em;')}>🍽 NUTRITION</div>
+            <div style={css('font-size:10px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>{healthRangeDays}-DAY TREND</div>
+          </div>
+
+          {healthDataLoading ? (
+            <div style={css('height:90px;display:flex;align-items:center;justify-content:center;color:oklch(0.5 0.025 228);font-size:11.5px;')}>Loading…</div>
+          ) : (
+            <MetricGraph label="CALORIES" values={kcalSeries} unit="kcal" color="oklch(0.86 0.17 195)" height={90} />
+          )}
+
+          <div style={css('margin:24px 0 16px;height:1px;background:oklch(0.28 0.06 232);')} />
+
+          <div style={css('display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px;')}>
+            <div style={css('font-size:13px;font-weight:800;letter-spacing:0.04em;color:oklch(0.75 0.02 228);')}>TODAY'S MACROS</div>
+            <div style={css('font-size:10px;color:oklch(0.45 0.025 228);')}>vs. general 2,000-kcal reference</div>
+          </div>
+          <div style={css('display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:16px 28px;')}>
+            {MACRO_REFERENCE.map((m) => (
+              <MacroBar key={m.key} label={m.label} unit={m.unit} target={m.target} color={m.color}
+                value={healthData.length ? healthData[healthData.length - 1][m.key] || 0 : 0} />
+            ))}
+          </div>
+
+          <div style={css('margin:24px 0 16px;height:1px;background:oklch(0.28 0.06 232);')} />
+
+          <div style={css('font-size:13px;font-weight:800;letter-spacing:0.04em;color:oklch(0.75 0.02 228);margin-bottom:18px;')}>
+            MACRO TRENDS · {healthRangeDays}D
+          </div>
+          <div style={css('display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:20px 28px;')}>
+            {healthDataLoading ? (
+              <div style={css('color:oklch(0.5 0.025 228);font-size:11.5px;')}>Loading…</div>
+            ) : (
+              MACRO_REFERENCE.map((m) => (
+                <MetricGraph key={m.key} label={m.label} unit={m.unit} color={m.color} height={64}
+                  values={healthData.map((d) => (d[m.key] > 0 ? d[m.key] : null))} />
+              ))
+            )}
+          </div>
         </div>
       </div>
 
