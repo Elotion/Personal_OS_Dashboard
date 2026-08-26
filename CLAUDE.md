@@ -542,10 +542,9 @@ CREATE TABLE habit_streak (
 -- meant yet another migration). If this data is ever read by something running
 -- in a different timezone, this convention needs revisiting.
 
--- PENDING: profile table (Operator card's name/tagline/focus/photo) does not
--- exist yet either. Same singleton-row pattern as habit_streak above, same
--- reason it's pending, same auto-upgrade behavior once it's created:
---
+-- RESOLVED 2026-08-26: profile table confirmed live. Elo ran this migration
+-- (INSERT included, so the singleton row was already correct on creation --
+-- no separate seed step needed unlike health_goals below).
 --   CREATE TABLE profile (
 --     id SERIAL PRIMARY KEY,
 --     name TEXT,
@@ -560,11 +559,12 @@ CREATE TABLE habit_streak (
 --   ALTER TABLE profile ENABLE ROW LEVEL SECURITY;
 --   CREATE POLICY "Enable all for public" ON profile FOR ALL USING (true) WITH CHECK (true);
 --
--- Until that's run: name/tagline/focus/photo are all editable and do persist
--- across a refresh, but via the browser's localStorage (key 'elo-os-profile'),
--- not Supabase -- same per-browser-only caveat as habits above, same
--- auto-upgrade-with-no-code-change once the table exists (App.js's profile
--- fetch on load already prefers the server value when it responds).
+-- name/tagline/focus/photo are now real, cross-device Supabase data, not
+-- localStorage -- verified via a direct GET /api/profile returning the exact
+-- seeded row (id 1, name "Elo", tagline "UCLA '27 · Founder, HEMS", focus
+-- "Shipping HEMS.", photo_data null since no photo's been uploaded yet).
+-- localStorage (key 'elo-os-profile') is now just the fallback for the rare
+-- case the API is unreachable, not the source of truth.
 -- The photo is stored as a compressed base64 JPEG (resized client-side to
 -- ~160px, see resizeImageFile() in HomeTab.js) directly in a TEXT column,
 -- not Supabase Storage -- Storage would need its own bucket created + policies
@@ -573,9 +573,15 @@ CREATE TABLE habit_streak (
 -- sizes; would need revisiting if this ever needs to hold large images.
 -- express.json()'s body size limit was raised to 5mb in server.js to fit these.
 
--- PENDING: health_goals table (HEALTH tab's personalized calorie/protein/
--- sugar targets) does not exist yet. Same singleton-row pattern as
--- habit_streak/profile above, same auto-upgrade behavior once created:
+-- RESOLVED 2026-08-26: health_goals table confirmed live -- ran empty (no
+-- INSERT in the migration, unlike profile above), then the app's own
+-- first-load-after-migration seed logic (App.js) filled it automatically:
+-- loaded the app once with the table freshly created, GET /api/health/goals
+-- came back null, App.js's effect caught that and fired PUT
+-- /api/health/goals with the real interview values -- a follow-up GET
+-- confirmed the exact seeded row (3500 kcal / 175g protein / 50g sugar,
+-- plus the physique/workout goal text below). Same singleton-row pattern as
+-- habit_streak/profile above:
 --
 --   CREATE TABLE health_goals (
 --     id SERIAL PRIMARY KEY,
@@ -604,12 +610,9 @@ CREATE TABLE habit_streak (
 -- general WHO/FDA reference limit, not biometric-derived -- flagged to Elo
 -- as such. These are estimates from standard formulas, explicitly not
 -- medical/dietitian advice -- HEALTH's NUTRITION card says so directly.
--- Until this table exists: goals are editable and persist across a refresh
--- via localStorage (key 'elo-os-health-goals'), same per-browser-only
--- caveat and same auto-upgrade-with-no-code-change once the table exists as
--- every other pending table here. App.js seeds the real interview values
--- into Supabase automatically via PUT /api/health/goals the first time it
--- loads after the table exists (not just on the next manual edit).
+-- Goals are now real, cross-device Supabase data -- localStorage (key
+-- 'elo-os-health-goals') is now just the fallback for the rare case the API
+-- is unreachable, not the source of truth, same as profile above.
 
 CREATE TABLE goals (
   id SERIAL PRIMARY KEY,
@@ -806,8 +809,8 @@ exactly this reason).
   fixed during that work.
 - Operator card (HOME, top-left) — name/tagline/focus editable in place (same
   click-pencil pattern as goals/habits), photo click opens the native file picker
-  and displays what's chosen. All of it persists across a refresh today, but via
-  localStorage rather than Supabase -- see the PENDING profile table note above.
+  and displays what's chosen. Real Supabase persistence as of 2026-08-26 (the
+  `profile` table migration ran) -- see the RESOLVED note on `profile` above.
 - Backend: Express now talks to Supabase with the service-role key, not the anon
   key -- Phase 1 of the roadmap below, done 2026-08-23.
 - Habit + task completion history / analytics (Phase 2 of the roadmap) -- done and
@@ -2019,7 +2022,7 @@ ordering lives in the planning discussion this came out of; this is the summary 
 from.
 
 1. ~~Supabase persistence~~ — done (tasks/entities/habits/goals/nutrition/journal all
-   real; habit_streak real; profile table still pending, see above)
+   real; habit_streak, profile, and health_goals all real too — confirmed 2026-08-26)
 2. ~~**Security foundation**~~ — done 2026-08-23. `supabaseClient.js` uses the
    service-role key (server-side only, in `.env`, never reaches the browser), confirmed
    working end-to-end (every route re-tested, a full CRUD round-trip re-verified). No
