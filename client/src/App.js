@@ -527,6 +527,12 @@ export default function App() {
   const [sleepLog, setSleepLog] = useState([]);
   const [sleepPending, setSleepPending] = useState(null);
   const [sleepQualityInput, setSleepQualityInput] = useState(0);
+  // Edit mode for an already-logged night (2026-08-26, Elo's request) --
+  // correcting the auto-computed hours or the quality emoji picked at
+  // wake-time, after the fact.
+  const [editingSleepId, setEditingSleepId] = useState(null);
+  const [sleepEditHours, setSleepEditHours] = useState('');
+  const [sleepEditQuality, setSleepEditQuality] = useState(0);
   const [foodEstimating, setFoodEstimating] = useState(false);
   const [healthData, setHealthData] = useState([]);
   const [healthDataLoading, setHealthDataLoading] = useState(false);
@@ -942,6 +948,23 @@ export default function App() {
     setSleepLog((s) => s.filter((x) => x.id !== id));
     fetch('/api/sleep/' + id, { method: 'DELETE' }).catch((e) => console.error(e));
   };
+  const startEditSleep = (entry) => {
+    setEditingSleepId(entry.id);
+    setSleepEditHours(String(entry.hours));
+    setSleepEditQuality(entry.quality || 0);
+  };
+  const cancelEditSleep = () => setEditingSleepId(null);
+  const saveEditSleep = (id) => {
+    const hours = parseFloat(sleepEditHours);
+    if (!hours || hours <= 0) return;
+    const quality = sleepEditQuality || null;
+    // Optimistic UI, fire-and-forget write -- same convention as every other
+    // handler in this file; we already know the values we're setting, no
+    // need to round-trip the PUT response to update local state.
+    setSleepLog((s) => s.map((x) => (x.id === id ? { ...x, hours, quality } : x)));
+    setEditingSleepId(null);
+    apiSend('/api/sleep/' + id, 'PUT', { hours, quality }).catch((e) => console.error(e));
+  };
 
   // ---- HEALTH tab handlers ----
   // Time window is user-adjustable (7/14/30/60/90 days), not fixed at 14 --
@@ -1354,6 +1377,9 @@ export default function App() {
           sleepLog={sleepLog} sleepPending={sleepPending}
           sleepQualityInput={sleepQualityInput} setSleepQualityInput={setSleepQualityInput}
           goToBed={goToBed} wakeUp={wakeUp} deleteSleep={deleteSleep}
+          editingSleepId={editingSleepId} sleepEditHours={sleepEditHours} setSleepEditHours={setSleepEditHours}
+          sleepEditQuality={sleepEditQuality} setSleepEditQuality={setSleepEditQuality}
+          startEditSleep={startEditSleep} cancelEditSleep={cancelEditSleep} saveEditSleep={saveEditSleep}
         />
       )}
 

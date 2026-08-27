@@ -719,6 +719,14 @@ app.post('/api/sleep/wake', async (req, res) => {
   res.json(writeResult.data[0]);
 });
 
+app.put('/api/sleep/:id', (req, res) => {
+  // Manual correction of an already-logged night -- hours/quality only
+  // (bed_time/wake_time stay whatever the original bed/wake click flow
+  // recorded; editing those isn't what was asked for). Same "trust the
+  // body directly" convention as every other PUT in this file.
+  handle(res, supabase.from('sleep_log').update(req.body).eq('id', req.params.id).select());
+});
+
 app.delete('/api/sleep/:id', (req, res) => {
   handle(res, supabase.from('sleep_log').delete().eq('id', req.params.id));
 });

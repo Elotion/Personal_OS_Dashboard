@@ -193,6 +193,8 @@ export default function HomeTab(props) {
     editingGoalId, editingGoalText, setEditingGoalText, startEditGoal, saveEditGoal, cancelEditGoal,
     foodLog, foodInput, setFoodInput, addFood, deleteFood, foodEstimating,
     sleepLog, sleepPending, sleepQualityInput, setSleepQualityInput, goToBed, wakeUp, deleteSleep,
+    editingSleepId, sleepEditHours, setSleepEditHours, sleepEditQuality, setSleepEditQuality,
+    startEditSleep, cancelEditSleep, saveEditSleep,
     calendarEvents, googleConnected, connectGoogleCalendar,
     dashboardCalendars, calendarManageOpen, toggleCalendarManage, toggleCalendarVisibility,
   } = props;
@@ -1044,27 +1046,70 @@ export default function HomeTab(props) {
         </div>
 
         {/* SLEEP -- bed/wake click flow lives here, not on HEALTH (which is
-            pure visual data + insight generation, no logging actions) */}
+            pure visual data + insight generation, no logging actions).
+            Shows only the single most recent night (2026-08-26, Elo's
+            request -- older nights already live in HEALTH's own trend/
+            day-by-day view, no reason to duplicate a running list here). */}
         <div className={CARD_CLASS} style={css(CARD + 'padding:18px;')}>
           <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;')}>
             <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>SLEEP</div>
-            <div style={css('font-size:9px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>RECENT</div>
+            <div style={css('font-size:9px;font-weight:600;letter-spacing:0.06em;color:oklch(0.5 0.025 228);')}>LATEST</div>
           </div>
           <div style={css('display:flex;flex-direction:column;gap:8px;margin-bottom:12px;')}>
             {sleepLog.length === 0 ? (
               <div style={css('color:oklch(0.5 0.025 228);font-size:11.5px;')}>No sleep logged yet.</div>
-            ) : (
-              sleepLog.slice(0, 3).map((s) => (
-                <div key={s.id} style={css('display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 10px;border-radius:7px;border-bottom:1px solid oklch(0.52 0.15 208);box-shadow:' + GLOW_MED + ';')}>
-                  <div style={css('font-weight:500;flex:1;min-width:0;')}>{s.date}</div>
-                  <div style={css('color:oklch(0.55 0.025 228);flex-shrink:0;')}>{s.hours}h{s.quality ? ' ' + SLEEP_QUALITY_EMOJI[s.quality] : ''}</div>
-                  <div
-                    className="elo-hover-pop"
-                    onClick={() => deleteSleep(s.id)}
-                    style={css('width:18px;height:18px;flex-shrink:0;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:11px;')}
-                  >✕</div>
+            ) : editingSleepId === sleepLog[0].id ? (
+              <div style={css('display:flex;flex-direction:column;gap:10px;padding:8px 10px;border-radius:7px;box-shadow:' + GLOW_MED + ';')}>
+                <div style={css('display:flex;align-items:center;gap:8px;')}>
+                  <div style={css('font-weight:500;flex:1;min-width:0;font-size:12px;')}>{sleepLog[0].date}</div>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={sleepEditHours}
+                    onChange={(e) => setSleepEditHours(e.target.value)}
+                    style={css('width:56px;background:oklch(0.12 0.06 240);border:1px solid oklch(0.58 0.18 204);border-radius:6px;padding:5px 6px;color:oklch(0.92 0.015 228);font-size:12px;text-align:center;')}
+                  />
+                  <div style={css('font-size:11px;color:oklch(0.55 0.025 228);')}>hours</div>
                 </div>
-              ))
+                <div style={css('display:flex;align-items:center;justify-content:space-between;gap:8px;')}>
+                  <div style={css('display:flex;gap:5px;')}>
+                    {[1, 2, 3, 4, 5].map((q) => (
+                      <div
+                        key={q}
+                        className="elo-btn-hover"
+                        onClick={() => setSleepEditQuality(sleepEditQuality === q ? 0 : q)}
+                        title={'Quality ' + q}
+                        style={css(
+                          'width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;' +
+                          (sleepEditQuality === q
+                            ? 'background:oklch(0.58 0.18 204);box-shadow:' + GLOW_STRONG + ';'
+                            : 'background:oklch(0.12 0.06 240);border:1px solid oklch(0.4 0.08 220);opacity:0.6;')
+                        )}
+                      >{SLEEP_QUALITY_EMOJI[q]}</div>
+                    ))}
+                  </div>
+                  <div style={css('display:flex;gap:6px;')}>
+                    <div className="elo-link-hover" onClick={cancelEditSleep} style={css('font-size:11px;color:oklch(0.55 0.025 228);cursor:pointer;')}>Cancel</div>
+                    <div className="elo-btn-hover" onClick={() => saveEditSleep(sleepLog[0].id)} style={css('font-size:11px;font-weight:700;color:oklch(0.86 0.17 195);cursor:pointer;')}>Save</div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={css('display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 10px;border-radius:7px;border-bottom:1px solid oklch(0.52 0.15 208);box-shadow:' + GLOW_MED + ';')}>
+                <div style={css('font-weight:500;flex:1;min-width:0;')}>{sleepLog[0].date}</div>
+                <div style={css('color:oklch(0.55 0.025 228);flex-shrink:0;')}>{sleepLog[0].hours}h{sleepLog[0].quality ? ' ' + SLEEP_QUALITY_EMOJI[sleepLog[0].quality] : ''}</div>
+                <div
+                  className="elo-hover-pop"
+                  onClick={() => startEditSleep(sleepLog[0])}
+                  style={css('width:18px;height:18px;flex-shrink:0;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:11px;')}
+                >✎</div>
+                <div
+                  className="elo-hover-pop"
+                  onClick={() => deleteSleep(sleepLog[0].id)}
+                  style={css('width:18px;height:18px;flex-shrink:0;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:oklch(0.45 0.025 228);font-size:11px;')}
+                >✕</div>
+              </div>
             )}
           </div>
           {sleepPending ? (

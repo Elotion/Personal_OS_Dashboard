@@ -68,6 +68,58 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Sleep UX refinements + Telegram wake-up quality picker (2026-08-27)
+Elo, in one message: (1) HOME's SLEEP card should show only the single most
+recent night, not a running list -- older nights already live in HEALTH;
+(2) an edit mode to correct an already-logged night's hours and quality
+emoji after the fact; (3) the Telegram bot never asked how he felt after
+"I woke up" -- wants a clickable 1-5 picker, not silent logging with no
+quality.
+
+**1. HOME's SLEEP card, single-entry only.** `sleepLog.slice(0, 3)` ->
+`sleepLog[0]` (`HomeTab.js`), label changed "RECENT" -> "LATEST". No backend
+change -- HEALTH's own trend/day-by-day view already reads the full
+`sleep_log` history independently, so nothing needed to "move" data there;
+it was always there.
+
+**2. Sleep edit mode.** New `PUT /api/sleep/:id` (`server.js`, same
+"trust the body directly" convention as every other PUT in this file) --
+updates `hours`/`quality` only, bed_time/wake_time stay whatever the
+original bed/wake click recorded (editing those wasn't asked for). HOME's
+SLEEP card gained a pencil icon next to the latest entry
+(`startEditSleep`/`saveEditSleep`/`cancelEditSleep` in `App.js`) that swaps
+the row for an hours input + the same 1-5 quality-emoji picker already used
+at wake-time, styled to match. Optimistic UI, fire-and-forget write -- same
+convention as the rest of this file.
+
+**3. Telegram wake-up quality picker.** `end_sleep`'s existing `quality`
+input was always optional and silently omitted if Elo didn't mention a
+number -- there was no follow-up ask. Handled deterministically in
+`lib/telegram.js`'s `handleUserMessage`, not left to the model's judgment:
+if a proposed `end_sleep` action has no `quality`, the normal Confirm/Cancel
+card is replaced with a 1-5 button row (plus Skip/Cancel) -- tapping a
+number IS the confirmation, no separate confirm step after. Any other
+actions bundled in the same message (e.g. "I woke up and did my workout")
+still execute together with it once a number's picked, just summarized
+above the picker instead of behind a plain Confirm button. New
+`bot.action(/^sleepq:(\d|skip)$/, ...)` handler fills the quality into the
+already-pending `end_sleep` action and runs `executeActions` on the whole
+batch, same as a normal Confirm tap.
+
+**Verified:** full round trip on the new PUT route (logged a real test
+night, edited hours 0->7.5 and quality 3->5 via curl, confirmed via a fresh
+GET, deleted); a live browser pass of the edit UI itself (clicked the
+pencil, changed the hours input and quality emoji, hit Save, confirmed the
+row updated with no console errors, then confirmed via the API directly
+that it was a real persisted write, not just optimistic local state); and
+confirmed HEALTH's SLEEP ring/trend are unaffected (still reads the full
+history correctly). **Could not test the Telegram button flow end-to-end**
+-- same limitation as the voice-note testing earlier in this file, this
+needs a real tap inside Elo's actual Telegram chat; the code path was
+checked by reading it against the existing, already-verified confirm/cancel
+handlers it's structurally identical to, but this specific interaction
+hasn't been mechanically exercised.
+
 ## Full-stack audit before real daily use (2026-08-26) -- TZ bug + open API
 Elo, right before starting real daily use of the dashboard: "why does my telegram
 bot think today is august 27th? ... check for all the bugs ... from the backend
