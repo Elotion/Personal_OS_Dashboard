@@ -17,6 +17,50 @@ app.use(express.json({ limit: '5mb' }));
 
 const PORT = process.env.PORT || 5050;
 
+// ---------------- ACCESS PIN (2026-08-26) ----------------
+// This app went publicly reachable on Railway with zero authentication on any
+// route -- anyone with the URL could read/write/delete every part of Elo's
+// personal data, and could burn his Anthropic/OpenAI quota via the AI-backed
+// routes. Elo asked for "a simple pin every time I log on" rather than a full
+// login system, appropriate for a single-user app with no accounts.
+//
+// Degrades gracefully like every other optional-config feature in this app
+// (health_goals, sleep_log before their migrations): if DASHBOARD_PIN isn't
+// set, this is a complete no-op and every route stays open -- so deploying
+// this code before the env var exists doesn't break anything, it just keeps
+// today's (open) behavior until the var is actually set.
+//
+// Internal calls from the Telegram agent's own tool executors
+// (lib/tools.js/lib/telegram.js, which fetch http://localhost:PORT/api/...
+// from inside this same process/container) never pass through Railway's
+// public edge at all -- they land here as genuine loopback connections, so
+// they're exempted by IP rather than needing the PIN threaded through every
+// executor.
+//
+// Google's OAuth redirect (/api/integrations/google/auth,
+// /api/integrations/google/callback) is also exempted -- those are plain
+// browser navigations (window.location.href / a redirect from Google), which
+// can't carry a custom header the way a fetch() call can.
+const PIN_EXEMPT_PATHS = new Set([
+  '/api/auth/verify',
+  '/api/integrations/google/auth',
+  '/api/integrations/google/callback',
+]);
+function isLoopback(ip) {
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+app.use('/api', (req, res, next) => {
+  if (!process.env.DASHBOARD_PIN) return next();
+  if (PIN_EXEMPT_PATHS.has(req.path)) return next();
+  if (isLoopback(req.ip)) return next();
+  if (req.get('X-Dashboard-Pin') === process.env.DASHBOARD_PIN) return next();
+  res.status(401).json({ error: 'PIN required' });
+});
+app.post('/api/auth/verify', (req, res) => {
+  if (!process.env.DASHBOARD_PIN) return res.json({ ok: true });
+  res.json({ ok: (req.body || {}).pin === process.env.DASHBOARD_PIN });
+});
+
 // small helper so every route doesn't repeat the same error handling
 function handle(res, promise) {
   return promise.then(({ data, error }) => {

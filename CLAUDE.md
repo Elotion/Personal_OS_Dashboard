@@ -68,6 +68,117 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Full-stack audit before real daily use (2026-08-26) -- TZ bug + open API
+Elo, right before starting real daily use of the dashboard: "why does my telegram
+bot think today is august 27th? ... check for all the bugs ... from the backend
+to the frontend, to the localhost, to railway to telegram to every possible
+check. fix it immediately if there are any decision making process please let
+me know." Two real, previously-unknown issues found -- one fixed outright, one
+that needed (and got) a real decision from Elo first.
+
+**1. RESOLVED (code-side) but needs a Railway action from Elo: no timezone set
+on the production server.** Root cause of the Telegram "today is Aug 27" report,
+and bigger than Telegram -- this is the exact "DEPLOYMENT RISK" flagged in an
+earlier audit (see the note near the bottom of the schema section) coming true
+for real. Every "local time" helper in this app (`localDateStr`,
+`localTimestampStr`, the hour-of-day math in `/api/analytics/habits`) reads the
+SERVER process's own OS timezone via bare `d.getHours()`/`d.getFullYear()` --
+correct by design for a single-user app where server and user share a
+timezone, which was true on localhost but stopped being true the moment this
+deployed to Railway (defaults to UTC, ~7-8 hours ahead of Elo's Pacific time).
+Confirmed live, not just theoretically: loaded the actual production site and
+found HOME's NUTRITION card showing "0 meals logged today" even though a real
+meal had been logged that day -- Railway's server-side "today" filter was
+already off by a calendar day. **Fix is a single env var, no code change**:
+add `TZ=America/Los_Angeles` in Railway's Variables tab. This corrects every
+server-side "what is today"/"what hour is it" calculation at once (analytics,
+nutrition/journal/task date defaults, sleep bed/wake math, the Telegram
+agent's own sense of "today") since it's a Node-wide setting, not a per-file
+fix. **Still needs Elo to actually add it in Railway** -- I can't touch
+Railway's config myself.
+
+**2. RESOLVED with a real decision from Elo: the entire API had zero
+authentication.** Found while auditing `server.js`: `app.use(cors())` wide
+open, no auth middleware anywhere -- every route (read AND write: create/
+delete tasks, journal entries, health data, sleep logs, literally everything)
+was reachable by anyone who had the Railway URL, no login at all. This is the
+exact "fix before deploying anywhere public" note from the schema section's
+Security callout, never actually built, now genuinely live. Real risk wasn't
+just data exposure -- the AI-backed routes (`/api/tasks/parse`,
+`/api/nutrition/estimate`, journal summaries, entity briefings,
+`/api/analytics/insight`) could be hit by anyone to burn Elo's Anthropic/
+OpenAI quota for free, the same abuse class as the already-removed
+`/api/_dev/agent-test` route, just covering the whole app instead of one
+route. Asked Elo how he wanted to handle this rather than silently picking an
+approach (auth changes his own daily access flow, worth his call) -- he chose
+a simple PIN prompted every time he opens the dashboard, not a full login
+system.
+- **`server.js`**: new `DASHBOARD_PIN`-gated middleware on `app.use('/api',
+  ...)`, placed right after the JSON body parser, before any route
+  definitions. Degrades gracefully exactly like every other optional-config
+  feature in this app (`health_goals`/`sleep_log` before their migrations
+  ran) -- if `DASHBOARD_PIN` isn't set, it's a complete no-op and every route
+  stays open, so deploying this code before the env var exists doesn't break
+  anything. New `POST /api/auth/verify` route does the actual pin comparison
+  (also a no-op `{ok:true}` when unconfigured). Two categories of exemption,
+  both necessary: (a) loopback requests (`127.0.0.1`/`::1`) skip the check
+  entirely -- this is what lets the Telegram agent's own tool executors
+  (`lib/tools.js`/`lib/telegram.js`, which `fetch()`
+  `http://localhost:PORT/api/...` from inside the same Railway
+  container/process) keep working without threading the PIN through every
+  executor, since those calls never actually leave the container and arrive
+  as genuine loopback connections, distinct from real external traffic
+  arriving over Railway's public network interface; (b) Google's OAuth
+  redirect routes (`/api/integrations/google/auth`,
+  `/api/integrations/google/callback`) are explicitly exempted since they're
+  plain browser navigations (`window.location.href` / a redirect from
+  Google), which can't carry a custom header the way `fetch()` can.
+- **`client/src/PinGate.js`** (new) -- a full-screen lock component wrapping
+  the whole app. Checks `sessionStorage` (deliberately not `localStorage` --
+  clears on tab/browser close, matching Elo's own "every time I log on"
+  framing rather than "once ever") for a stored PIN on mount, verifies it
+  against `POST /api/auth/verify`; shows a PIN entry screen if missing or
+  wrong, renders the real app once verified.
+- **`client/src/index.js`** -- patches `window.fetch` once at startup to
+  auto-attach the entered PIN as an `X-Dashboard-Pin` header on every
+  `/api/...` call. App.js has roughly 50 raw `fetch('/api/...')` call sites
+  built up over every earlier phase of this project -- patching fetch once
+  here, rather than threading a header through all of them individually, was
+  deliberate to avoid touching that much working code for a cross-cutting
+  concern.
+- **Verified for real, not just "it compiles":** direct `curl` tests proved
+  the server-side split is genuine -- hitting the backend via `localhost`
+  (loopback) always succeeded regardless of PIN (the intentional internal-call
+  exemption), so verification specifically used the Mac's real LAN IP to
+  simulate a genuine external, non-loopback request: no header → `401`, wrong
+  PIN → `401`, correct PIN → `200`, and the Google OAuth exempt path stayed a
+  clean `302` throughout. Then a full live-browser pass of the actual
+  `PinGate` UI: cleared `sessionStorage`, reloaded, confirmed the lock screen
+  renders; submitted a wrong PIN, confirmed "Wrong PIN." shows and access
+  stays blocked; submitted the correct PIN, confirmed the real app loaded
+  with every data fetch (`/api/entities`, `/api/tasks`, `/api/habits`, etc.)
+  returning `200`. Re-ran `CI=true npm run build` after these changes (the
+  exact command that failed once before on a different bug -- see the
+  Railway deployment section below) and confirmed it still compiles clean,
+  no new lint issues introduced.
+- **Still needs Elo:** choose an actual PIN value and set `DASHBOARD_PIN` to
+  it in Railway's Variables tab (and optionally in local `.env` too, though
+  local dev has no real need for it since only Elo's own Mac can reach
+  `localhost` anyway) -- I don't choose or see the real value, same handling
+  as every other credential in this project.
+
+**Also audited, no issues found:** grepped for `dangerouslySetInnerHTML`/
+`eval`/`new Function` (none), grepped for accidentally-committed secret
+patterns across `client/src`/`server.js`/`lib/` (none), confirmed `.gitignore`
+still correctly excludes `.env`, re-ran `CI=true npm run build` (clean, no
+regressions since the last ESLint-under-CI fix), and did a live click-through
+of every tab (HOME, CRM, BRAIN, JOURNAL, HEALTH, FINANCE) on both localhost
+and the real Railway production URL checking console errors and network
+requests -- zero errors, zero failed requests anywhere, including confirming
+the earlier `/api/profile`/`/api/health/goals` 404s (from back when those
+tables' migrations hadn't run yet) are genuinely gone now, not just
+undocumented.
+
 ## Latest HEALTH tab refinement (2026-08-26) -- cleaner layout, clearer rings
 Elo asked for a focused pass on HEALTH specifically, by voice ("focus on the half
 tab" -> HEALTH): reorder AI INSIGHT above HEALTH OVERVIEW for cleaner spacing;
@@ -550,7 +661,12 @@ GOOGLE_CLIENT_ID=<from console.cloud.google.com -> APIs & Services -> Clients --
 GOOGLE_CLIENT_SECRET=<same page, paired with the client ID -- server-side only>
 TELEGRAM_BOT_TOKEN=<from @BotFather on Telegram, /newbot -- server-side only>
 OPENAI_API_KEY=<from platform.openai.com -> API keys -- server-side only>
+DASHBOARD_PIN=<any PIN Elo picks -- gates every /api/* route once set, see the audit note above>
 ```
+`TZ` is a Railway-only env var, not a local `.env` line (local dev never needed it -- the
+Mac's own OS timezone was always correct). Set `TZ=America/Los_Angeles` directly in
+Railway's Variables tab -- see the "Full-stack audit" note above for why this one var
+fixes every server-side "what is today" calculation across the whole app at once.
 `ANTHROPIC_API_KEY` powers Phase 3a's Claude bridge (`lib/anthropic.js`) -- added and confirmed live 2026-08-23.
 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` power Phase 6's Google Calendar OAuth (`lib/google.js`) --
 added 2026-08-25. Google Cloud project "Personal OS Dashboard", OAuth consent screen set to
