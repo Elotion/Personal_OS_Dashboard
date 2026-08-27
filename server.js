@@ -87,7 +87,16 @@ function hasValidSession(req) {
 
 app.use('/api', (req, res, next) => {
   if (!isAccessControlled()) return next();
-  if (AUTH_EXEMPT_PATHS.has(req.path)) return next();
+  // req.path has the '/api' mount prefix stripped by Express (this
+  // middleware is mounted via app.use('/api', ...)), but originalUrl never
+  // is -- matching against the stripped req.path here was the actual bug:
+  // every AUTH_EXEMPT_PATHS entry (all written as '/api/...') silently never
+  // matched, so the exempt routes -- including /api/auth/verify and
+  // /api/auth/google-verify themselves -- fell through and required a
+  // credential nothing could ever supply, locking out all access (including
+  // the login routes) the instant either DASHBOARD_PIN or
+  // AUTHORIZED_GOOGLE_EMAIL got set. Caught live on production.
+  if (AUTH_EXEMPT_PATHS.has(req.originalUrl.split('?')[0])) return next();
   if (isLoopback(req.ip)) return next();
   if (process.env.DASHBOARD_PIN && req.get('X-Dashboard-Pin') === process.env.DASHBOARD_PIN) return next();
   if (hasValidSession(req)) return next();
