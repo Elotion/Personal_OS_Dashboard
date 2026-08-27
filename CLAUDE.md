@@ -68,6 +68,68 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Real bug: Telegram could mark a habit-with-subtasks done without its subtasks (2026-08-27)
+Elo: asked the Telegram bot to check off Morning Routine (which has 5 sub-
+tasks), and it just marked the whole habit done without asking which
+sub-tasks he'd actually finished or touching any of them -- "the main habit
+shouldn't be able to check if the subtask is unchecked," and asked for it
+fixed on both "the dashboard end and the telegram bot intelligent end." He
+also flagged this applies to every habit with sub-tasks, not just this one --
+the fix below is fully generic, keyed off `habit_subtasks` presence, never
+hardcoded to a specific habit.
+
+**Root cause:** `toggle_habit`'s executor (`lib/tools.js`) sends a plain
+`{completed_today, completed_date}` PUT to `/api/habits/:id` -- the SAME
+route the dashboard's own non-subtask checkbox uses. That route accepted
+this blindly from ANY caller with zero awareness of sub-tasks -- a known,
+documented limitation from the original 2026-08-26 agent build ("habits with
+habit_subtasks aren't individually addressable via chat"), never actually
+closed until now.
+
+**Fix 1 -- dashboard/backend end, closes it for every caller:**
+`PUT /api/habits/:id` (`server.js`) now checks, whenever a caller tries to
+set `completed_today`/`completed_date`, whether that habit has any
+sub-tasks; if it does, the caller-supplied value is ignored and the field is
+recomputed live from the real sub-task state instead ("are ALL of today's
+sub-tasks actually done?"). This closes the loophole structurally --
+regardless of what the Telegram agent, a future integration, or a stray curl
+call sends, a habit with sub-tasks can never be marked done while any
+sub-task is unchecked, and can't be falsely marked NOT done while they're
+all actually checked either (same derived-value rule, both directions).
+
+**Fix 2 -- Telegram "intelligent" end:** new `toggle_habit_subtask` write
+tool (`lib/tools.js`) addresses one sub-task at a time via the existing
+`PUT /api/habit-subtasks/:id` (which already cascades the parent habit's own
+completion once every sub-task is done -- nothing new needed there).
+`toggle_habit`'s own description now explicitly warns it's a no-op on a
+habit with sub-tasks. The agent's system prompt (`lib/agent.js`) was
+extended with explicit instructions: for a habit with sub-tasks, never call
+`toggle_habit`; if Elo's message names specific sub-tasks (or says "all of
+them"), map them to the real sub-task labels from `get_habits` and propose
+`toggle_habit_subtask` per one; if his message doesn't say which ones (e.g.
+just "check off morning routine"), ask a plain-text clarifying question
+naming the habit's actual sub-tasks and wait for his answer instead of
+guessing or marking the whole thing.
+
+**Verified end-to-end, not just read back:** reproduced the exact bug first
+(temporarily unchecked one real sub-task, sent the exact old buggy PUT body
+directly at `/api/habits/:id`, confirmed the OLD code path would have
+accepted it -- then confirmed the NEW guard correctly overrides it back to
+`completed_today:false`); called `runAgentTurn('check off my morning
+routine')` directly against the real habit data (one sub-task deliberately
+left incomplete) and got back a real clarifying question naming the exact
+open sub-tasks, not a silent complete; followed up with `runAgentTurn("I
+finished yoga and breakfast this morning")` and got back correctly-resolved
+`toggle_habit_subtask` proposals for exactly those two real sub-task ids;
+ran `executeActions` on them and confirmed via a fresh `GET /api/habits`
+that both sub-tasks and the cascaded parent were correctly marked done.
+Also regression-checked a habit WITHOUT sub-tasks (Working Out) still
+toggles directly with no interference from the new guard. Every real
+sub-task/habit state touched during this testing was restored to its exact
+original value afterward, confirmed via a final full habit-by-habit sanity
+check against real data -- learned from testing carefully this time,
+unlike the sleep-data incident earlier this same day.
+
 ## Sleep UX refinements + Telegram wake-up quality picker (2026-08-27)
 Elo, in one message: (1) HOME's SLEEP card should show only the single most
 recent night, not a running list -- older nights already live in HEALTH;

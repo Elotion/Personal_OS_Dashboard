@@ -361,7 +361,26 @@ async function logHabitCompletion(habitId, completedDate) {
 
 app.put('/api/habits/:id', async (req, res) => {
   const id = req.params.id;
-  const body = req.body;
+  const body = { ...req.body };
+
+  // A habit WITH sub-tasks derives its completion from finishing every
+  // sub-task -- completed_today/completed_date are read-only computed
+  // fields for such a habit, never something a direct PUT can force.
+  // Closes this for every caller, not just the dashboard's own UI (which
+  // already avoids sending this for a subtask habit) -- real bug: asking
+  // the Telegram agent to "check off morning routine" sent a direct
+  // {completed_today:true} here exactly like this route already accepted
+  // from anyone, marking the parent done while its sub-tasks stayed
+  // unchecked. Applies to every habit with sub-tasks, not just one.
+  if (Object.prototype.hasOwnProperty.call(body, 'completed_date') || Object.prototype.hasOwnProperty.call(body, 'completed_today')) {
+    const subtasksResult = await supabase.from('habit_subtasks').select('completed_date').eq('habit_id', id);
+    if (!subtasksResult.error && subtasksResult.data.length > 0) {
+      const today = localDateStr(new Date());
+      const allDone = subtasksResult.data.every((s) => s.completed_date === today);
+      body.completed_today = allDone;
+      body.completed_date = allDone ? today : null;
+    }
+  }
 
   if (Object.prototype.hasOwnProperty.call(body, 'completed_date')) {
     await logHabitCompletion(id, body.completed_date);
