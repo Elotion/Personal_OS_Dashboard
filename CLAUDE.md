@@ -179,6 +179,101 @@ the earlier `/api/profile`/`/api/health/goals` 404s (from back when those
 tables' migrations hadn't run yet) are genuinely gone now, not just
 undocumented.
 
+**Same-day follow-up: the "not transferring" report turned out to be the same
+TZ bug, plus Google Sign-In added as a second access method.** After the PIN
+work above, Elo reported (a) the TZ fix from earlier in this same session
+didn't actually take -- Railway still computed "today" as Aug 27 -- and (b)
+food logged via localhost wasn't showing up on the live site. Diagnosed both
+directly rather than guessing:
+- **(a):** confirmed live via `GET /api/health/data?days=1` against
+  production -- still returned `date: "2026-08-27"`. Elo's own description of
+  what he'd entered ("American california") is almost certainly the actual
+  bug: Node's `TZ` env var needs the exact IANA identifier
+  `America/Los_Angeles` -- an unrecognized string is silently ignored (no
+  error), falling back to UTC, which matches exactly what was observed. Told
+  Elo to double check the literal value in Railway's Variables tab.
+- **(b):** proved this is the SAME bug, not a second one, with a real round
+  trip: logged a real test food item via the local backend, confirmed it
+  existed via a local `GET /api/nutrition` (`logged_date: "2026-08-26"`), then
+  queried the exact same row via `GET /api/nutrition` on the live Railway URL
+  -- came back empty. Root cause: `GET /api/nutrition` filters
+  `logged_date = today`, and `today` is computed by whichever server answers
+  the request (`server.js:485`) -- locally that's correctly Aug 26, on
+  Railway (still UTC per the unfixed TZ bug above) it's Aug 27, so the row
+  genuinely exists in the one shared Supabase database both environments
+  already use, it's just filtered out of "today" by Railway's wrong clock.
+  **There was never a missing sync feature to build** -- local and production
+  have always shared one database; once the TZ value actually takes effect,
+  this resolves itself with no code change. Test row deleted after
+  confirming.
+
+**Google Sign-In added as a second access method, alongside the PIN.** Elo,
+in the same message: "I will setup the password/pin later ... I also want a
+Login to Google in order to access the website." Extended the access-control
+work from earlier in this section rather than replacing it -- `server.js`'s
+gate now accepts EITHER a valid `X-Dashboard-Pin` header OR a valid Google
+session (`X-Session-Token`), whichever is configured; access is open only
+when NEITHER `DASHBOARD_PIN` nor `AUTHORIZED_GOOGLE_EMAIL` is set, same
+graceful-degradation rule as before.
+- **`server.js`**: added `google-auth-library`'s `OAuth2Client` (already a
+  transitive dep of `googleapis`, added directly to `package.json` rather
+  than relying on that implicitly). New `POST /api/auth/google-verify` --
+  verifies the ID token credential Google's own Sign-In button hands back
+  (`verifyIdToken`, checked against `GOOGLE_CLIENT_ID` as audience), then
+  checks the token's email against `AUTHORIZED_GOOGLE_EMAIL` (a single
+  allowed address -- this is a single-user app, not a multi-account one) and
+  `email_verified`. On success, issues a random session token
+  (`crypto.randomUUID()`) stored in an in-memory `Map` (`googleSessions`,
+  30-day TTL) -- **known limitation, flagged not silently accepted: this
+  resets on every redeploy**, meaning a fresh Google sign-in is needed after
+  each `git push` (which happens often on this project). Worth moving to a
+  real `sessions` table later if that becomes annoying enough to bother Elo;
+  not built now since it's easy to add on top later and wasn't asked for.
+  New `GET /api/auth/config` (unauthenticated by design -- a Google client ID
+  isn't secret, and the response reveals only which methods are turned on,
+  not any actual PIN/session value) tells the frontend which method(s) are
+  live so the gate UI only shows what's actually usable.
+- **`client/src/PinGate.js`** rebuilt (same file, same role, outgrew its
+  original name) to fetch `/api/auth/config` on mount and render whichever
+  of the two methods are enabled -- a real "Sign in with Google" button
+  (rendered by Google's own `accounts.google.com/gsi/client` script, loaded
+  dynamically only when Google login is actually enabled) and/or the
+  existing PIN box, with an "OR" divider when both are live. The Google
+  session token is stored in `localStorage` (persists across browser
+  restarts, matching normal "stay signed in with Google" behavior) --
+  deliberately different from the PIN's `sessionStorage` (clears on tab
+  close, matching Elo's own "every time I log on" framing for that method
+  specifically); this is an intentional difference between the two methods,
+  not an inconsistency to fix.
+- **`client/src/index.js`**'s fetch patch extended to attach whichever
+  credential is present (`X-Dashboard-Pin` from `sessionStorage`,
+  `X-Session-Token` from `localStorage`, either/both/neither).
+- **Verified directly:** `GET /api/auth/config` correctly toggles
+  `pinEnabled`/`googleEnabled` based on which env vars are set; a garbage
+  credential to `/api/auth/google-verify` fails cleanly (`401`, server stays
+  up, confirmed with a follow-up request) rather than crashing the process;
+  re-ran the same LAN-IP external-request test from the PIN work above with
+  only Google login configured -- no credential still `401`s, a fake session
+  token still `401`s, the internal loopback exemption still `200`s (proving
+  the Telegram agent's own internal tool calls stay unaffected regardless of
+  which access method is active); and a live browser check confirmed the
+  real Google-branded "Sign in with Google" button renders correctly once
+  `AUTHORIZED_GOOGLE_EMAIL` is set. **Could not test a full real sign-in**
+  (needs an actual logged-in Google session in a real browser, which this
+  environment doesn't have) -- that part needs Elo himself.
+- **Still needs Elo, two things:**
+  1. Set `AUTHORIZED_GOOGLE_EMAIL` in Railway's Variables tab to the Google
+     account that should be allowed in (his own -- `el200594@gmail.com`,
+     stated directly here since it's not a secret, just an address).
+  2. In Google Cloud Console, on the SAME OAuth client already used for
+     Calendar (`GOOGLE_CLIENT_ID`), add the site's origin under **Authorized
+     JavaScript origins** (a different field from Calendar's "Authorized
+     redirect URIs," which is already set) --
+     `https://personalosdashboard-production.up.railway.app`, and
+     `http://localhost:3001` too if Elo wants Google login to also work in
+     local dev. Google's Sign-In button will fail with an origin-mismatch
+     error without this -- a real, required manual step, not optional.
+
 ## Latest HEALTH tab refinement (2026-08-26) -- cleaner layout, clearer rings
 Elo asked for a focused pass on HEALTH specifically, by voice ("focus on the half
 tab" -> HEALTH): reorder AI INSIGHT above HEALTH OVERVIEW for cleaner spacing;
@@ -662,6 +757,7 @@ GOOGLE_CLIENT_SECRET=<same page, paired with the client ID -- server-side only>
 TELEGRAM_BOT_TOKEN=<from @BotFather on Telegram, /newbot -- server-side only>
 OPENAI_API_KEY=<from platform.openai.com -> API keys -- server-side only>
 DASHBOARD_PIN=<any PIN Elo picks -- gates every /api/* route once set, see the audit note above>
+AUTHORIZED_GOOGLE_EMAIL=<the one Google account allowed to sign in -- el200594@gmail.com>
 ```
 `TZ` is a Railway-only env var, not a local `.env` line (local dev never needed it -- the
 Mac's own OS timezone was always correct). Set `TZ=America/Los_Angeles` directly in

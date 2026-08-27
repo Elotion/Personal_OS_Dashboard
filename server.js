@@ -1,8 +1,10 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const supabase = require('./supabaseClient');
 const { z } = require('zod');
+const { OAuth2Client } = require('google-auth-library');
 const { askClaude, askClaudeStructured } = require('./lib/anthropic');
 const { getEntityContext, getJournalContext, getEntitiesWithDescriptions, getCorrelationData, getHealthContext } = require('./lib/context');
 const { localDateStr, localTimestampStr } = require('./lib/dates');
@@ -17,48 +19,114 @@ app.use(express.json({ limit: '5mb' }));
 
 const PORT = process.env.PORT || 5050;
 
-// ---------------- ACCESS PIN (2026-08-26) ----------------
+// ---------------- ACCESS CONTROL (2026-08-26, extended same day) ----------------
 // This app went publicly reachable on Railway with zero authentication on any
 // route -- anyone with the URL could read/write/delete every part of Elo's
 // personal data, and could burn his Anthropic/OpenAI quota via the AI-backed
-// routes. Elo asked for "a simple pin every time I log on" rather than a full
-// login system, appropriate for a single-user app with no accounts.
+// routes. Started as just a PIN (Elo: "a simple pin every time I log on"),
+// extended same-day to also accept Google Sign-In, since Elo asked to defer
+// the PIN but wants Google login working now -- both are accepted credential
+// types, whichever is configured actually gates access; a request needs to
+// satisfy at least one to get through once EITHER is configured.
 //
 // Degrades gracefully like every other optional-config feature in this app
-// (health_goals, sleep_log before their migrations): if DASHBOARD_PIN isn't
-// set, this is a complete no-op and every route stays open -- so deploying
-// this code before the env var exists doesn't break anything, it just keeps
-// today's (open) behavior until the var is actually set.
+// (health_goals, sleep_log before their migrations): if neither DASHBOARD_PIN
+// nor AUTHORIZED_GOOGLE_EMAIL is set, this is a complete no-op and every
+// route stays open -- so deploying this code before either var exists
+// doesn't break anything.
 //
 // Internal calls from the Telegram agent's own tool executors
 // (lib/tools.js/lib/telegram.js, which fetch http://localhost:PORT/api/...
 // from inside this same process/container) never pass through Railway's
 // public edge at all -- they land here as genuine loopback connections, so
-// they're exempted by IP rather than needing the PIN threaded through every
-// executor.
+// they're exempted by IP rather than needing a credential threaded through
+// every executor.
 //
-// Google's OAuth redirect (/api/integrations/google/auth,
-// /api/integrations/google/callback) is also exempted -- those are plain
-// browser navigations (window.location.href / a redirect from Google), which
-// can't carry a custom header the way a fetch() call can.
-const PIN_EXEMPT_PATHS = new Set([
+// Google's CALENDAR OAuth redirect (/api/integrations/google/auth,
+// /api/integrations/google/callback -- a different flow from login, see
+// lib/google.js) is also exempted -- those are plain browser navigations
+// (window.location.href / a redirect from Google), which can't carry a
+// custom header the way a fetch() call can.
+//
+// Google LOGIN sessions are an in-memory Map, not a database table -- fine
+// for a single trusted user, but they reset on every redeploy (i.e. every
+// git push, which happens often on this project), meaning a fresh sign-in is
+// needed after each deploy. Flagged as a known tradeoff, not silently
+// accepted -- worth moving to a `sessions` table later if that gets
+// annoying, same "start simple, note the limitation" pattern already used
+// elsewhere in this app (e.g. pendingActions' single-chat-key limitation).
+const AUTH_EXEMPT_PATHS = new Set([
   '/api/auth/verify',
+  '/api/auth/google-verify',
+  '/api/auth/config',
   '/api/integrations/google/auth',
   '/api/integrations/google/callback',
 ]);
 function isLoopback(ip) {
   return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }
+
+const googleLoginClient = process.env.GOOGLE_CLIENT_ID ? new OAuth2Client(process.env.GOOGLE_CLIENT_ID) : null;
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const googleSessions = new Map(); // token -> { email, expiresAt }
+
+function isAccessControlled() {
+  return !!(process.env.DASHBOARD_PIN || process.env.AUTHORIZED_GOOGLE_EMAIL);
+}
+function hasValidSession(req) {
+  const token = req.get('X-Session-Token');
+  if (!token) return false;
+  const session = googleSessions.get(token);
+  if (!session) return false;
+  if (session.expiresAt < Date.now()) {
+    googleSessions.delete(token);
+    return false;
+  }
+  return true;
+}
+
 app.use('/api', (req, res, next) => {
-  if (!process.env.DASHBOARD_PIN) return next();
-  if (PIN_EXEMPT_PATHS.has(req.path)) return next();
+  if (!isAccessControlled()) return next();
+  if (AUTH_EXEMPT_PATHS.has(req.path)) return next();
   if (isLoopback(req.ip)) return next();
-  if (req.get('X-Dashboard-Pin') === process.env.DASHBOARD_PIN) return next();
-  res.status(401).json({ error: 'PIN required' });
+  if (process.env.DASHBOARD_PIN && req.get('X-Dashboard-Pin') === process.env.DASHBOARD_PIN) return next();
+  if (hasValidSession(req)) return next();
+  res.status(401).json({ error: 'Authentication required' });
 });
+
+app.get('/api/auth/config', (req, res) => {
+  res.json({
+    pinEnabled: !!process.env.DASHBOARD_PIN,
+    googleEnabled: !!(process.env.AUTHORIZED_GOOGLE_EMAIL && process.env.GOOGLE_CLIENT_ID),
+    googleClientId: process.env.GOOGLE_CLIENT_ID || null,
+  });
+});
+
 app.post('/api/auth/verify', (req, res) => {
   if (!process.env.DASHBOARD_PIN) return res.json({ ok: true });
   res.json({ ok: (req.body || {}).pin === process.env.DASHBOARD_PIN });
+});
+
+app.post('/api/auth/google-verify', async (req, res) => {
+  if (!googleLoginClient || !process.env.AUTHORIZED_GOOGLE_EMAIL) {
+    return res.status(400).json({ error: 'Google login is not configured.' });
+  }
+  try {
+    const ticket = await googleLoginClient.verifyIdToken({
+      idToken: (req.body || {}).credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    if (payload.email !== process.env.AUTHORIZED_GOOGLE_EMAIL || !payload.email_verified) {
+      return res.status(403).json({ error: 'This Google account is not authorized for this dashboard.' });
+    }
+    const token = crypto.randomUUID();
+    googleSessions.set(token, { email: payload.email, expiresAt: Date.now() + SESSION_TTL_MS });
+    res.json({ sessionToken: token, email: payload.email, name: payload.name });
+  } catch (e) {
+    console.error('[auth] google-verify failed:', e.message);
+    res.status(401).json({ error: 'Invalid Google credential' });
+  }
 });
 
 // small helper so every route doesn't repeat the same error handling
