@@ -696,6 +696,22 @@ app.get('/api/sleep/pending', async (req, res) => {
   res.json({ bed_time: result.data ? result.data.bed_time : null });
 });
 
+// A bedtime before ~6am reads as "very late last night," not "today" --
+// Elo: seeing a completed sleep entry labeled with today's date is
+// confusing before he's actually gone to bed tonight. Matches how people
+// naturally talk about sleep ("I went to bed at 1am" still means "last
+// night"), not a literal midnight cutoff. Deliberately a fixed clock
+// threshold, not the stateful bedtime-click day-boundary system
+// (lib/habitDay.js) -- that one exists to answer "has a bedtime happened
+// yet," which is a different question from "which night does THIS
+// specific bedtime belong to" (this route only ever runs once you've
+// already gone to bed, so there's nothing to defer).
+function nightOfDate(bedDate) {
+  const d = new Date(bedDate);
+  if (d.getHours() < 6) d.setDate(d.getDate() - 1);
+  return localDateStr(d);
+}
+
 app.post('/api/sleep/bedtime', async (req, res) => {
   const result = await supabase.from('sleep_pending')
     .update({ bed_time: localTimestampStr(new Date()) }).eq('id', 1).select().maybeSingle();
@@ -749,7 +765,7 @@ app.post('/api/sleep/wake', async (req, res) => {
   const bedDate = new Date(bedTimeStr);
   const hours = Math.round(((now.getTime() - bedDate.getTime()) / 3600000) * 10) / 10;
 
-  const loggedDate = localDateStr(now);
+  const loggedDate = nightOfDate(bedDate);
   const row = {
     bed_time: bedTimeStr, wake_time: localTimestampStr(now),
     hours, quality: req.body.quality ?? null, logged_date: loggedDate,

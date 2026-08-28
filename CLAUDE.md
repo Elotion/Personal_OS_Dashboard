@@ -68,6 +68,47 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Sleep entries now label by "night of," not wake date (2026-08-28)
+Elo: HOME's SLEEP card could show today's date for a completed entry before
+he'd gone to bed tonight -- confusing, since it read like it was describing
+tonight's (not-yet-happened) sleep rather than last night's. Root cause:
+`logged_date` was always the WAKE date -- a 1am bedtime is already past
+midnight, so a night that's really "last night" from Elo's own perspective
+got labeled with today's date.
+
+**Fix:** `nightOfDate()` (`server.js`) -- a bedtime before ~6am now labels
+the entry with the PREVIOUS calendar day instead of its own literal date,
+matching how people actually talk about sleep ("I went to bed at 1am" still
+means "last night"). Deliberately a fixed clock threshold, not a reuse of
+the stateful bedtime-click day-boundary system built for habits/journal
+(`lib/habitDay.js`) -- that one exists to answer "has a bedtime happened
+yet," a different question from "which night does this specific completed
+bedtime belong to" (this route only ever runs once bed has already
+happened, so there's nothing left to defer). No migration needed -- pure
+application-code fix, unlike the habit/journal day boundary.
+
+**Real near-miss caught while testing:** simulating a late bedtime via
+`sleep_pending` manipulation collided with the wake route's existing
+"one row per `logged_date`" dedupe logic and overwrote Elo's real id-17
+entry with test data, since the test's computed date matched that row's
+old label. Caught immediately (not shipped blind) and restored with the
+correct values.
+
+**Historical entries relabeled for consistency**, not just the new logic
+going forward -- both of Elo's other two real sleep rows had a bed_time
+before 6am and were still labeled under the old wake-date convention,
+which would have collided with newly-logged nights under the new rule:
+id 13 (bed 2:20am) `2026-08-26` -> `2026-08-25`; id 17 (bed 1:00am)
+`2026-08-27` -> `2026-08-26`. Also logged a real missed night from the
+same request -- bed 1:00am/wake 10:45am on `2026-08-28`, correctly labeled
+`2026-08-27` under the new rule, no quality given this time.
+
+**Verified live, not just via the API:** confirmed via a fresh browser
+reload that HOME's SLEEP card shows `2026-08-27` for the latest entry
+while the header still correctly reads `AUG 28, 2026` -- the exact
+distinction Elo's complaint was about -- and confirmed HEALTH's sleep
+ring/bedtime/wake time still render correctly with no regressions.
+
 ## RESOLVED: the "waking up doesn't log" bug -- an uncaught 409 was crashing the whole server, not an auth issue
 Root-caused from real Railway logs Elo pasted after being asked for them.
 The earlier Google-login-loopback theory was wrong -- the actual cause was
