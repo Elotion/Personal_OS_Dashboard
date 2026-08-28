@@ -68,6 +68,80 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Telegram: fixed Korean mis-transcription + real conversation memory (2026-08-27/28)
+Elo: voice notes were sometimes transcribed in Korean instead of English, and
+separately, "I want my telegram bot to be a lot smarter than it is now, it
+should be able to determine what I need based on me mumbling ... like what
+you can do as Claude AI."
+
+**Transcription bug, root cause + fix:** `lib/transcribe.js`'s Whisper call
+never passed a `language` param -- without one, Whisper auto-detects the
+spoken language from the audio itself, and a quiet/mumbled/short note
+(exactly what voice notes to this bot tend to be) is exactly the kind of
+input that detection can misfire on. Fixed by pinning `language: 'en'`
+explicitly, since English is the only language Elo actually speaks into
+this bot.
+
+**"Smarter" -- the real gap was conversation memory, not model quality.**
+Every single message previously started `runAgentTurn` from a completely
+blank slate: no memory of anything said a moment earlier, in either
+direction. That's a fundamentally different experience from talking to
+Claude.ai (where the whole conversation is visible), and it's a concrete,
+fixable architecture gap, not a vague "make it smarter" ask -- a loose
+follow-up reply like "yeah both of them" is only answerable if the bot
+remembers it just asked which sub-tasks were done.
+- **`lib/agent.js`**: `runAgentTurn(userText, history)` now accepts and
+  returns a running message history in Anthropic's own message format.
+  Write-tool proposals are recorded into history as a plain-text summary,
+  not the raw `tool_use` blocks -- a `tool_use` block requires a matching
+  `tool_result` in the very next message, which a later plain-text reply
+  can't supply (Confirm/Cancel happen out-of-band via a button tap, not as
+  a model turn), so storing raw tool_use there would make the next real API
+  call invalid. Read-tool `tool_use`/`tool_result` pairs stay raw (already
+  correctly paired within the same turn, safe to keep).
+- **`lib/telegram.js`**: new `conversationHistory: Map<chatId, messages[]>`,
+  same in-memory/resets-on-restart tradeoff as `pendingActions`. Threaded
+  into `handleUserMessage` (both the text and voice paths, since both
+  already shared this function). `trimHistory` caps it at 20 messages,
+  but only ever cuts at a genuine fresh-user-text boundary -- never
+  mid-way through a `tool_use`/`tool_result` pair, which would otherwise
+  leave a dangling, invalid `tool_result` with no matching `tool_use`
+  before it on the next call.
+- **Confirm/Cancel now write back into history too** (`appendOutcomeNote`)
+  -- those taps happen out-of-band as button presses, not chat messages, so
+  without this the next message would have no idea whether the last
+  proposal actually went through, making "did that log?" unanswerable.
+- **System prompt** (`lib/agent.js`) gained an explicit instruction to read
+  past small transcription glitches and loose/mid-thought phrasing the way
+  a typo gets read past, and to use the conversation history + real data
+  from `get_*` tools to fill in what's left implicit, rather than defaulting
+  to a clarifying question. Also tightened the habit-sub-task clarifying
+  question specifically (see the entry above this one): it must now say
+  which sub-tasks are ALREADY done vs STILL open, not just list every
+  sub-task name -- a flat list is exactly what made a real test's "yeah
+  both of them" unresolvable (ambiguous against 5 items instead of an
+  obvious 2), caught and fixed during this same pass.
+
+**Verified end-to-end, not just "the code looks right":** direct
+`runAgentTurn` calls against real habit data -- first with a fresh `[]`
+history (correctly asked which of Morning Routine's sub-tasks were still
+open, explicitly separating already-done from open), then fed that
+returned history into a second call of literally `"yeah both of them"` with
+zero restated context, and it correctly resolved to `toggle_habit_subtask`
+for exactly the two real open sub-tasks (Yoga, Breakfast) -- proving both
+that history actually carries across calls and that the improved
+clarifying-question phrasing gives a short reply something concrete to
+resolve against. Ran `executeActions` on the result and confirmed via a
+fresh `GET /api/habits` that both sub-tasks and the cascaded parent
+correctly landed as done. All test completions reverted afterward -- this
+testing happened right at a real midnight rollover to 2026-08-28, so the
+final state was reset to "nothing logged yet today," matching reality
+rather than leaving fake completion data on a day Elo hadn't used the app
+yet. **Could not test a real voice note or a real multi-message Telegram
+exchange** -- same limitation as every other Telegram-specific test in this
+file; the mechanism was verified by calling `runAgentTurn`/`executeActions`
+directly against real data, not through an actual Telegram round trip.
+
 ## Real bug: Telegram could mark a habit-with-subtasks done without its subtasks (2026-08-27)
 Elo: asked the Telegram bot to check off Morning Routine (which has 5 sub-
 tasks), and it just marked the whole habit done without asking which
