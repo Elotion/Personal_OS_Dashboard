@@ -8,6 +8,7 @@ const { OAuth2Client } = require('google-auth-library');
 const { askClaude, askClaudeStructured } = require('./lib/anthropic');
 const { getEntityContext, getJournalContext, getEntitiesWithDescriptions, getCorrelationData, getHealthContext } = require('./lib/context');
 const { localDateStr, localTimestampStr } = require('./lib/dates');
+const { getEffectiveDate } = require('./lib/habitDay');
 const googleCalendar = require('./lib/google');
 const telegramBot = require('./lib/telegram');
 
@@ -372,13 +373,23 @@ app.put('/api/habits/:id', async (req, res) => {
   // {completed_today:true} here exactly like this route already accepted
   // from anyone, marking the parent done while its sub-tasks stayed
   // unchecked. Applies to every habit with sub-tasks, not just one.
+  //
+  // "today" here is the bedtime-aware effective date (lib/habitDay.js), not
+  // the plain calendar date -- Elo's rule: staying up past midnight without
+  // having gone to bed yet shouldn't reset habits; the day only rolls over
+  // once he actually clicks "went to bed" (or at the ordinary midnight, if
+  // he went to bed before it, same as always).
   if (Object.prototype.hasOwnProperty.call(body, 'completed_date') || Object.prototype.hasOwnProperty.call(body, 'completed_today')) {
+    const today = await getEffectiveDate();
     const subtasksResult = await supabase.from('habit_subtasks').select('completed_date').eq('habit_id', id);
     if (!subtasksResult.error && subtasksResult.data.length > 0) {
-      const today = localDateStr(new Date());
       const allDone = subtasksResult.data.every((s) => s.completed_date === today);
       body.completed_today = allDone;
       body.completed_date = allDone ? today : null;
+    } else if (body.completed_today) {
+      // No sub-tasks -- still pin the date to the effective "today" rather
+      // than trusting whatever date the caller sent.
+      body.completed_date = today;
     }
   }
 
@@ -435,7 +446,12 @@ app.put('/api/habit-subtasks/:id', async (req, res) => {
   }
 
   const now = new Date();
-  const patch = { completed_date: body.completed_date, completed_at: body.completed_date ? localTimestampStr(now) : null };
+  // "today" is the bedtime-aware effective date (lib/habitDay.js), not the
+  // plain calendar date -- see the note on PUT /api/habits/:id. Pinning the
+  // date server-side here too, same "backend is authoritative" rule, rather
+  // than trusting whatever date the caller sent.
+  const today = body.completed_date ? await getEffectiveDate() : null;
+  const patch = { completed_date: today, completed_at: today ? localTimestampStr(now) : null };
   const subResult = await supabase.from('habit_subtasks').update(patch).eq('id', id).select();
   if (subResult.error) {
     if (missingHabitSubtasksTable(subResult.error)) return res.status(404).json({ error: 'habit_subtasks table does not exist yet' });
@@ -448,16 +464,16 @@ app.put('/api/habit-subtasks/:id', async (req, res) => {
   // match, through the same logHabitCompletion() a direct toggle uses, so
   // streak/analytics can't drift out of sync with what the checkboxes show.
   const habitId = subResult.data[0].habit_id;
-  const today = localDateStr(now);
+  const todayForCascade = today || (await getEffectiveDate());
   const allSubs = await supabase.from('habit_subtasks').select('completed_date').eq('habit_id', habitId);
   if (!allSubs.error) {
-    const allDone = allSubs.data.length > 0 && allSubs.data.every((s) => s.completed_date === today);
+    const allDone = allSubs.data.length > 0 && allSubs.data.every((s) => s.completed_date === todayForCascade);
     const habitRow = await supabase.from('habits').select('completed_date').eq('id', habitId).maybeSingle();
-    const wasDone = !habitRow.error && habitRow.data && habitRow.data.completed_date === today;
+    const wasDone = !habitRow.error && habitRow.data && habitRow.data.completed_date === todayForCascade;
     if (allDone !== wasDone) {
-      await logHabitCompletion(habitId, allDone ? today : null);
+      await logHabitCompletion(habitId, allDone ? todayForCascade : null);
       const err = (await supabase.from('habits')
-        .update({ completed_today: allDone, completed_date: allDone ? today : null }).eq('id', habitId)).error;
+        .update({ completed_today: allDone, completed_date: allDone ? todayForCascade : null }).eq('id', habitId)).error;
       if (err) console.error('habit cascade update failed:', err);
     }
   }
@@ -683,6 +699,29 @@ app.post('/api/sleep/bedtime', async (req, res) => {
   res.json({ bed_time: result.data.bed_time });
 });
 
+// Undoes an accidental "went to bed" click -- Elo: "the system should know
+// that when I click off the accidental sleep was an accident." Clears
+// sleep_pending back to null with no sleep_log row ever created, so it's as
+// if the click never happened -- including for getEffectiveDate() (habitDay.js),
+// which reads sleep_pending directly, so cancelling correctly stops that click
+// from advancing the habit/journal day boundary.
+app.post('/api/sleep/bedtime/cancel', async (req, res) => {
+  const result = await supabase.from('sleep_pending').update({ bed_time: null }).eq('id', 1).select().maybeSingle();
+  if (result.error) {
+    if (missingTable(result.error, 'sleep_pending')) return res.status(404).json({ error: 'sleep_pending table does not exist yet' });
+    console.error(result.error);
+    return res.status(400).json({ error: result.error.message });
+  }
+  res.json({ ok: true });
+});
+
+// The "effective" habit/journal day -- see lib/habitDay.js for the full
+// bedtime-aware rule. Frontend fetches this instead of computing its own
+// literal calendar date for habit-completion display and journal defaults.
+app.get('/api/today', async (req, res) => {
+  res.json({ date: await getEffectiveDate() });
+});
+
 app.post('/api/sleep/wake', async (req, res) => {
   const pendingResult = await supabase.from('sleep_pending').select('bed_time').eq('id', 1).maybeSingle();
   if (pendingResult.error) {
@@ -764,8 +803,19 @@ const missingJournalExtractColumns = (error) => error && /(entry_date|mood|theme
 
 app.post('/api/journal', async (req, res) => {
   const { day, date, tasks_count, captures_count, recap, raw_text, entry_date } = req.body;
-  const body = { day, date, tasks_count, captures_count, recap, raw_text };
-  if (entry_date) body.entry_date = entry_date;
+  // created_at previously relied on the column's own DEFAULT NOW(), which
+  // evaluates on the database server in UTC into a timezone-naive column --
+  // the same bug class already fixed for nutrition_log/habit_completions/
+  // tasks, just missed here. Caught while building the bedtime-aware day
+  // boundary below: a voice-note journal entry right around midnight showed
+  // created_at ~7 hours ahead of the real local submission time.
+  const body = { day, date, tasks_count, captures_count, recap, raw_text, created_at: localTimestampStr(new Date()) };
+  // entry_date is the bedtime-aware effective date (lib/habitDay.js) when
+  // the caller doesn't specify one -- same rule as habits, and the actual
+  // point of this change: journaling right after midnight, before going to
+  // bed, dates the entry to the day it's actually about, not the day the
+  // clock happens to say.
+  body.entry_date = entry_date || (await getEffectiveDate());
   let result = await supabase.from('journal_entries').insert([body]).select();
   if (result.error && missingJournalExtractColumns(result.error) && body.entry_date) {
     delete body.entry_date;

@@ -68,6 +68,89 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Bedtime-aware day boundary for habits + journal (2026-08-27/28)
+Elo: staying up past midnight was resetting his habits, and journaling after
+midnight (before going to bed) dated the entry to a day that "hasn't
+happened yet" from his own perspective. His exact rule, worked out over a
+few messages: **habits/journal stay on the previous day until "went to bed"
+is actually clicked, UNLESS bed happened before midnight, in which case the
+ordinary midnight reset applies exactly as it always has.** Also asked for
+a way to undo an accidental "went to bed" click, since the whole scheme
+hinges on that click meaning something.
+
+**The rule, as code:** `lib/habitDay.js`'s `getEffectiveDate()` computes
+`effectiveDate = min(realToday, dateOf(mostRecentBedtimeClick) + 1 day)`.
+Bed at 11pm: `mostRecentBedtime` is today, so `+1 day` = tomorrow, but
+`realToday` is still today until midnight actually passes -- `min()` holds
+at today right up until then, then flips the instant midnight arrives (the
+ordinary reset, unchanged). Awake past midnight with no bedtime click yet:
+the last real bedtime is still yesterday's, so `+1 day` lands one day behind
+`realToday`, which has already moved further -- `min()` holds at that
+earlier date until a fresh "went to bed" click updates `mostRecentBedtime`,
+at which point it advances immediately, at that exact click, not before.
+`mostRecentBedtimeClick` reads `sleep_pending.bed_time` first (a click still
+in progress), falling back to the most recent completed `sleep_log.bed_time`
+if nothing's currently pending.
+
+**Backend, made authoritative everywhere "today" mattered for habits/journal**
+(same "server computes it, never trusts the caller" pattern already used for
+the habit-subtask guard above):
+- New `GET /api/today` -- `{date}`, the effective date, for the frontend to
+  fetch instead of computing its own literal calendar date.
+- New `POST /api/sleep/bedtime/cancel` -- undoes an accidental "went to bed"
+  click. Clears `sleep_pending` back to null with no `sleep_log` row ever
+  created, so it's as if it never happened, including for
+  `getEffectiveDate()` itself (which reads `sleep_pending` directly).
+- `PUT /api/habits/:id` and `PUT /api/habit-subtasks/:id` both now pin
+  `completed_date` to `getEffectiveDate()` whenever marking something done,
+  ignoring whatever date the caller sent -- closes this for every caller
+  (dashboard, Telegram, anything future) at once, same as the sub-task guard.
+- `POST /api/journal` defaults `entry_date` to `getEffectiveDate()` when the
+  caller doesn't specify one. Also fixed a real related bug caught in the
+  same pass: `created_at` relied on the column's own `DEFAULT NOW()` (UTC,
+  unfixed) instead of `localTimestampStr()` -- the same bug class already
+  fixed for `nutrition_log`/`habit_completions`/`tasks`, just missed here.
+  Found it because a real voice-note entry's `created_at` showed ~7 hours
+  ahead of the actual local submission time.
+
+**Frontend** (`client/src/App.js`): new `effectiveHabitDate` state, fetched
+on load and refreshed after any bed/wake/cancel action (exactly the events
+that can change it). The single `todayStr` that already drove habit-done
+rendering and the streak logic (both already centralized before this
+change) now prefers `effectiveHabitDate` over a fresh `localDateStr(now)`
+call, and so do `toggleHabit`/`toggleSubtask`/`deleteSubtask`'s own local
+date computations and the journal add-form's date-picker default. A "Not
+really — cancel" link appears next to "In bed since {time}" on HOME's SLEEP
+card whenever a bedtime is pending, calling the new cancel route.
+
+**Telegram** (`lib/tools.js`): new `cancel_sleep` write tool (confirm
+required, same as every other write) mapped to the new cancel route.
+`create_journal_entry`'s executor now fetches `/api/today` instead of doing
+its own `localDateStr(new Date())` math, so a voice-note journal entry gets
+the same effective-date treatment as the dashboard. `toggle_habit`/
+`toggle_habit_subtask` needed no changes -- the backend is authoritative
+now regardless of what date they send.
+
+**Verified directly against real data, not just "the code looks right,"**
+using temporary manipulation of `sleep_pending`/`sleep_log` timestamps
+(restored to their exact real values afterward, confirmed via a final full
+sanity check): confirmed the deferred case (last bedtime 2 days ago -- via
+both the `sleep_pending` path and the completed-`sleep_log`-fallback path
+independently -- effective date correctly held at the earlier date, not the
+real calendar date); confirmed clicking "went to bed" immediately advances
+the effective date to match real today; confirmed cancelling a pending
+bedtime correctly falls back to real prior history (not just "revert to
+some default"); confirmed a habit toggle during the deferred state wrote
+`completed_date` as the deferred date, ignoring both the caller's own value
+and the literal calendar date; confirmed a journal entry created with no
+`entry_date` during the deferred state correctly defaulted to it too, with
+`created_at` landing at genuine local time. Live-browser-tested the actual
+"went to bed" -> "Not really — cancel" round trip on HOME, confirmed via a
+fresh `GET /api/sleep/pending` that the cancel was a real persisted write,
+not just optimistic UI. Tested `cancel_sleep` end-to-end through the real
+agent with a natural phrasing ("oops that went to bed click was an
+accident, undo it") and confirmed it resolved and executed correctly.
+
 ## Telegram: fixed Korean mis-transcription + real conversation memory (2026-08-27/28)
 Elo: voice notes were sometimes transcribed in Korean instead of English, and
 separately, "I want my telegram bot to be a lot smarter than it is now, it

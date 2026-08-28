@@ -192,7 +192,7 @@ export default function HomeTab(props) {
     weeklyGoalAddOpen, setWeeklyGoalAddOpen, monthlyGoalAddOpen, setMonthlyGoalAddOpen,
     editingGoalId, editingGoalText, setEditingGoalText, startEditGoal, saveEditGoal, cancelEditGoal,
     foodLog, foodInput, setFoodInput, addFood, deleteFood, foodEstimating,
-    sleepLog, sleepPending, sleepQualityInput, setSleepQualityInput, goToBed, wakeUp, deleteSleep,
+    sleepLog, sleepPending, sleepQualityInput, setSleepQualityInput, goToBed, wakeUp, deleteSleep, cancelBedtime,
     editingSleepId, sleepEditHours, setSleepEditHours, sleepEditQuality, setSleepEditQuality,
     startEditSleep, cancelEditSleep, saveEditSleep,
     calendarEvents, googleConnected, connectGoogleCalendar,
@@ -1114,8 +1114,16 @@ export default function HomeTab(props) {
           </div>
           {sleepPending ? (
             <div style={css('display:flex;flex-direction:column;gap:10px;')}>
-              <div style={css('font-size:12px;color:oklch(0.65 0.025 228);')}>
-                😴 In bed since <span style={css('font-weight:700;color:oklch(0.86 0.17 195);')}>{formatClockTime(sleepPending)}</span>
+              <div style={css('display:flex;align-items:center;justify-content:space-between;gap:8px;')}>
+                <div style={css('font-size:12px;color:oklch(0.65 0.025 228);')}>
+                  😴 In bed since <span style={css('font-weight:700;color:oklch(0.86 0.17 195);')}>{formatClockTime(sleepPending)}</span>
+                </div>
+                <div
+                  className="elo-link-hover"
+                  onClick={cancelBedtime}
+                  title="Clicked by accident? This undoes it -- no sleep gets logged."
+                  style={css('font-size:10.5px;color:oklch(0.5 0.025 228);cursor:pointer;white-space:nowrap;flex-shrink:0;')}
+                >Not really — cancel</div>
               </div>
               <div style={css('display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;')}>
                 <div style={css('display:flex;gap:6px;')}>

@@ -345,6 +345,8 @@ export default function App() {
       .then((result) => setSleepPending(result.bed_time))
       .catch(() => { /* sleep_pending table not there yet -- bed/wake buttons no-op */ });
 
+    refreshEffectiveHabitDate();
+
     // streak starts from localStorage (instant, avoids a flash of "0"), then gets
     // corrected from Supabase once that responds -- Supabase wins when both exist,
     // since it's the cross-device source of truth. If the habit_streak table
@@ -527,6 +529,17 @@ export default function App() {
   const [sleepLog, setSleepLog] = useState([]);
   const [sleepPending, setSleepPending] = useState(null);
   const [sleepQualityInput, setSleepQualityInput] = useState(0);
+  // The bedtime-aware "effective" day for habits/journal (2026-08-27/28,
+  // Elo's request) -- staying up past midnight without having gone to bed
+  // yet shouldn't reset habits or re-date a journal entry to a day that
+  // "hasn't happened yet." null until the initial /api/today fetch resolves;
+  // every read site below falls back to the plain calendar date until then.
+  // Refreshed after any bed/wake/cancel action, since those are exactly the
+  // events that can change it (see lib/habitDay.js for the actual rule).
+  const [effectiveHabitDate, setEffectiveHabitDate] = useState(null);
+  const refreshEffectiveHabitDate = () => {
+    apiGet('/api/today').then((r) => setEffectiveHabitDate(r.date)).catch((e) => console.error(e));
+  };
   // Edit mode for an already-logged night (2026-08-26, Elo's request) --
   // correcting the auto-computed hours or the quality emoji picked at
   // wake-time, after the fact.
@@ -698,7 +711,7 @@ export default function App() {
 
   // ---- HABITS handlers (backed by the real API) ----
   const toggleHabit = (id) => {
-    const todayStr = localDateStr();
+    const todayStr = effectiveHabitDate || localDateStr();
     setHabits((prev) => {
       const next = prev.map((h) => {
         if (h.id !== id) return h;
@@ -790,7 +803,7 @@ export default function App() {
   const toggleHabitExpand = (id) => setExpandedHabitId((cur) => (cur === id ? null : id));
 
   const toggleSubtask = (habitId, subtaskId) => {
-    const todayStr = localDateStr();
+    const todayStr = effectiveHabitDate || localDateStr();
     setHabits((prev) =>
       prev.map((h) => {
         if (h.id !== habitId) return h;
@@ -827,7 +840,7 @@ export default function App() {
   };
 
   const deleteSubtask = (habitId, subtaskId) => {
-    const todayStr = localDateStr();
+    const todayStr = effectiveHabitDate || localDateStr();
     setHabits((prev) =>
       prev.map((h) => {
         if (h.id !== habitId) return h;
@@ -927,7 +940,26 @@ export default function App() {
   // 2026-08-25). sleepPending mirrors the server's sleep_pending singleton.
   const goToBed = () => {
     apiSend('/api/sleep/bedtime', 'POST', {})
-      .then((result) => setSleepPending(result.bed_time))
+      .then((result) => {
+        setSleepPending(result.bed_time);
+        // Going to bed is exactly the trigger that can advance the
+        // bedtime-aware habit/journal day (lib/habitDay.js) -- refresh so
+        // the UI picks up the new boundary immediately, not on next reload.
+        refreshEffectiveHabitDate();
+      })
+      .catch((e) => console.error(e));
+  };
+  // Undoes an accidental "went to bed" click (2026-08-27, Elo: "the system
+  // should know that ... the accidental sleep was an accident"). Clears
+  // sleep_pending server-side with no sleep_log row ever created, so it's as
+  // if it never happened -- including for the habit/journal day boundary,
+  // which reads sleep_pending directly.
+  const cancelBedtime = () => {
+    apiSend('/api/sleep/bedtime/cancel', 'POST', {})
+      .then(() => {
+        setSleepPending(null);
+        refreshEffectiveHabitDate();
+      })
       .catch((e) => console.error(e));
   };
   const wakeUp = () => {
@@ -941,6 +973,7 @@ export default function App() {
         setSleepPending(null);
         setSleepQualityInput(0);
         loadHealthData(healthRangeDays);
+        refreshEffectiveHabitDate();
       })
       .catch((e) => console.error(e));
   };
@@ -1111,7 +1144,15 @@ export default function App() {
         setJournalEntries((js) => js.map((j) => (j.id === id ? { ...j, generating: false } : j)));
       });
   };
-  const toggleJournalAdd = () => setJournalAddOpen((v) => !v);
+  const toggleJournalAdd = () => {
+    setJournalAddOpen((v) => {
+      // Default the date picker to the current effective (bedtime-aware) day
+      // each time the form opens, not whatever it happened to be at initial
+      // page load -- matters most right after midnight, before bed.
+      if (!v) setJournalAddDate(effectiveHabitDate || localDateStr());
+      return !v;
+    });
+  };
   const submitJournalAdd = () => {
     const raw = journalAddRaw.trim();
     if (!raw || !journalAddDate) return;
@@ -1129,7 +1170,7 @@ export default function App() {
       })
       .catch((e) => console.error(e));
     setJournalAddRaw('');
-    setJournalAddDate(localDateStr());
+    setJournalAddDate(effectiveHabitDate || localDateStr());
     setJournalAddOpen(false);
   };
   const startEditJournal = (id) => {
@@ -1163,11 +1204,13 @@ export default function App() {
   const dateLabel = now.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).toUpperCase();
   const timeLabel = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 
-  // "done today" is recomputed from `now` on every render (not baked in once at
-  // fetch time), so a habit correctly flips back to unchecked the moment the
-  // calendar date actually changes -- including a tab left open across midnight,
-  // not just on the next refresh.
-  const todayStr = localDateStr(now);
+  // "done today" uses the bedtime-aware effective date (2026-08-27/28, Elo's
+  // request) instead of the plain calendar date -- staying up past midnight
+  // without having gone to bed yet shouldn't reset habits; the day only
+  // rolls over once "went to bed" is actually clicked (or at the ordinary
+  // midnight, if bed happened before it). Falls back to the literal
+  // calendar date until the initial /api/today fetch resolves.
+  const todayStr = effectiveHabitDate || localDateStr(now);
   const habitsWithDone = useMemo(
     () => habits.map((h) => ({ ...h, done: h.completedDate === todayStr })),
     [habits, todayStr]
@@ -1376,7 +1419,7 @@ export default function App() {
           deleteFood={deleteFood} foodEstimating={foodEstimating}
           sleepLog={sleepLog} sleepPending={sleepPending}
           sleepQualityInput={sleepQualityInput} setSleepQualityInput={setSleepQualityInput}
-          goToBed={goToBed} wakeUp={wakeUp} deleteSleep={deleteSleep}
+          goToBed={goToBed} wakeUp={wakeUp} deleteSleep={deleteSleep} cancelBedtime={cancelBedtime}
           editingSleepId={editingSleepId} sleepEditHours={sleepEditHours} setSleepEditHours={setSleepEditHours}
           sleepEditQuality={sleepEditQuality} setSleepEditQuality={setSleepEditQuality}
           startEditSleep={startEditSleep} cancelEditSleep={cancelEditSleep} saveEditSleep={saveEditSleep}
