@@ -68,6 +68,51 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Telegram sleep/wake: explicit confirm -> quality -> confirm again (2026-08-28)
+Elo reported waking up via Telegram wasn't updating the dashboard (tested
+twice, same result), and separately asked for a specific 3-step flow: going
+to bed gets its own Confirm/Cancel (already true -- `start_sleep` was always
+a normal write tool); waking up should ALSO get an initial Confirm/Cancel,
+THEN the 1-5 quality picker, THEN one more Confirm/Cancel before anything is
+actually saved -- not the single-step "pick a quality and that's the
+confirm" flow built the day before.
+
+**Rebuilt in `lib/telegram.js`:** the old special-case (an `end_sleep`
+proposal skipped the normal confirm card and went straight to the quality
+picker) is gone -- every proposal, wake-up included, now goes through the
+same `sendConfirmCard()` first. Tapping Confirm checks for an `end_sleep`
+action that hasn't had its quality asked yet (`qualityAsked` flag, not
+`!input.quality` -- that would misfire on "Skip", which sets `quality:
+null`, sending it back into the picker in a loop); if found, it edits the
+message into the 1-5/Skip/Cancel picker instead of executing. Picking a
+quality sets `quality` + `qualityAsked:true` and edits the message into a
+final Confirm/Cancel card (reusing the same `sendConfirmCard`) -- only that
+second Confirm actually calls `executeActions`. Cancel at any of the three
+stages cancels the whole batch, unchanged.
+
+**Verified as fully as possible without a live Telegram chat:** simulated
+the exact tap sequence in code against real data (propose -> confirm ->
+quality picker shown -> pick 4 -> final card shows "quality 4/5" -> final
+confirm -> real `sleep_log` row written and confirmed via a fresh `GET`),
+and confirmed the `qualityAsked` marker correctly prevents the picker from
+re-appearing after "Skip". Test row deleted afterward. **Could not test the
+actual Telegram button taps** -- same standing limitation as every other
+Telegram-specific change in this file.
+
+**The reported bug itself is still open, not yet root-caused.** The
+`end_sleep` execution path tested clean end-to-end against the local
+backend, but local testing can't rule out a production-only cause -- the
+leading theory is the Google-login access-control gate added earlier the
+same day (`server.js`): the Telegram agent's internal tool calls are
+supposed to be exempt via a loopback-IP check, and that specific exemption
+has never actually been verified against Railway's real environment (every
+"verified end-to-end" Telegram test done locally today ran with
+`isAccessControlled()` false the whole time, since neither `DASHBOARD_PIN`
+nor `AUTHORIZED_GOOGLE_EMAIL` is set in local `.env` -- meaning a
+loopback-detection bug specific to Railway could exist without anything
+local ever having exercised it). Needs Railway logs from a real wake-up
+attempt to confirm or rule out before a fix can be written with confidence.
+
 ## Bedtime-aware day boundary for habits + journal (2026-08-27/28)
 Elo: staying up past midnight was resetting his habits, and journaling after
 midnight (before going to bed) dated the entry to a day that "hasn't
