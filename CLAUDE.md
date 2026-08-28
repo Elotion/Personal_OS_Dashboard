@@ -68,6 +68,55 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Claude model split: Opus -> Sonnet/Haiku by feature (2026-08-28)
+Elo asked me to check API costs -- $2 in 3 days, more than he expected. Root
+cause: every single Claude call in this app, across every feature, ran on
+Opus 5 (the most expensive tier, $5/$25 per million input/output tokens vs.
+Sonnet 5's $2/$10) -- including the Telegram bot, which is by far the
+highest-volume call site (every message, up to 5 calls per message via the
+read-tool loop). Compared per-tier tradeoffs against what each feature
+actually needs, Elo picked a split: Sonnet for anything that has to read
+nuance or avoid overclaiming a pattern, Haiku for bounded/low-stakes
+extraction.
+
+- **Sonnet 5** (`claude-sonnet-5`): the Telegram bot (`lib/agent.js` --
+  highest volume by far, and Sonnet is Anthropic's own recommended tier for
+  production tool-calling agents, not a quality compromise), journal
+  mood/theme extraction (becomes real history other features read back
+  later, so a bad read compounds), and both insight generators
+  (`/api/analytics/insight`, `/api/health/insight` -- judging whether a
+  pattern is real vs. forced is exactly the kind of call worth the better
+  tier). This is now `lib/anthropic.js`'s shared default, so these call
+  sites needed no code change, just a comment documenting the choice.
+- **Haiku 4.5** (`claude-haiku-4-5-20251001`): nutrition macro estimates
+  (highest-frequency of the remaining features -- every food log), AI task
+  parsing, BRAIN entity briefings, journal recaps -- all bounded,
+  structured, low-stakes-if-occasionally-terse.
+- `lib/anthropic.js`'s `askClaude`/`askClaudeStructured` both gained an
+  optional `model` param (default `claude-sonnet-5`); each `server.js` call
+  site either relies on that default or passes the Haiku id explicitly.
+
+**Real bug caught immediately by testing, not assumed:** Haiku 4.5 rejects
+`output_config.effort` outright (`400: This model does not support the
+effort parameter`) -- Sonnet and Opus both accept it, Haiku doesn't. Fixed
+with a `supportsEffort(model)` check that omits the field entirely for any
+`claude-haiku-*` model. Caught because the very first live test (nutrition
+estimate) failed instead of being assumed to work from reading the diff.
+
+**Verified every one of the 8 call sites for real, not just re-read:** all
+four Haiku routes (nutrition estimate, task parsing -- including the exact
+HEMS-vs-WORK classification the original misclassification bug was about,
+confirmed still correct -- BRAIN briefing, journal recap) tested live with
+real prompts and produced good-quality output; both Sonnet insight routes
+correctly identified sparse real data and declined to overclaim a pattern,
+matching the whole reason they stayed off Haiku; the Telegram agent
+(`runAgentTurn`) tested with both a read-only question and the habit-
+subtask-clarification scenario, both producing the same quality of answer
+seen on Opus. Two routes (journal recap, mood/theme extraction) write to
+Elo's one real journal entry -- captured its exact `recap`/`mood`/`themes`
+values before testing, ran the real calls, then restored the exact
+original values afterward, confirmed via a fresh `GET`.
+
 ## Telegram sleep/wake: explicit confirm -> quality -> confirm again (2026-08-28)
 Elo reported waking up via Telegram wasn't updating the dashboard (tested
 twice, same result), and separately asked for a specific 3-step flow: going

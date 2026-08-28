@@ -183,7 +183,9 @@ app.post('/api/entities/:id/briefing', async (req, res) => {
       "dashboard. Based on the data below, write a 2-3 sentence plain-language " +
       'summary of where things stand -- call out anything overdue or piling up. ' +
       'No headers, no bullet points, just prose.\n\n' + context.text;
-    const briefing = await askClaude(prompt, { maxTokens: 1024 });
+    // Haiku (2026-08-28 cost pass) -- a short, bounded summary of data
+    // that's already right in the prompt, low stakes if occasionally terse.
+    const briefing = await askClaude(prompt, { maxTokens: 1024, model: 'claude-haiku-4-5-20251001' });
     res.json({ briefing });
   } catch (err) {
     console.error(err);
@@ -232,7 +234,10 @@ app.post('/api/tasks/parse', async (req, res) => {
     const prompt =
       'Extract a structured task from this freeform note for a personal task tracker. ' +
       'Available life areas (pick the single best match):\n' + entityList + '\n\nNote: ' + text;
-    const parsed = await askClaudeStructured(prompt, TaskSchema);
+    // Haiku (2026-08-28 cost pass) -- bounded structured extraction with the
+    // entity list right in the prompt, same fix that resolved the earlier
+    // misclassification bug above; re-check if a similar miss shows up again.
+    const parsed = await askClaudeStructured(prompt, TaskSchema, { model: 'claude-haiku-4-5-20251001' });
     if (!parsed) return res.status(502).json({ error: 'Could not parse a task from that text' });
     res.json(parsed);
   } catch (err) {
@@ -646,7 +651,10 @@ app.post('/api/nutrition/estimate', async (req, res) => {
       "portion if the description doesn't specify one. Give your best rough estimate " +
       '-- this is for casual personal tracking, not precise nutrition science.\n\n' +
       'Food: ' + text;
-    const estimate = await askClaudeStructured(prompt, MacroSchema);
+    // Haiku (2026-08-28 cost pass) -- rough, casual estimation, and this is
+    // the highest-frequency of the GENERATE-button-style features (every
+    // food log, dashboard and Telegram both).
+    const estimate = await askClaudeStructured(prompt, MacroSchema, { model: 'claude-haiku-4-5-20251001' });
     if (!estimate) return res.status(502).json({ error: 'Could not estimate nutrition for that' });
     res.json(estimate);
   } catch (err) {
@@ -847,7 +855,9 @@ app.post('/api/journal/:id/summary', async (req, res) => {
       'dashboard. Based on the raw text below, write a 2-3 sentence plain-' +
       'language summary of what happened and how the day went. No headers, ' +
       'no bullet points, just prose.\n\n' + (entry.raw_text || '(empty entry)');
-    const recap = await askClaude(prompt, { maxTokens: 1024 });
+    // Haiku (2026-08-28 cost pass) -- a short summary of text already in the
+    // prompt, low stakes if occasionally terse.
+    const recap = await askClaude(prompt, { maxTokens: 1024, model: 'claude-haiku-4-5-20251001' });
     const { error } = await supabase.from('journal_entries').update({ recap }).eq('id', req.params.id);
     if (error) { console.error(error); return res.status(400).json({ error: error.message }); }
     res.json({ recap });
@@ -876,6 +886,9 @@ app.post('/api/journal/:id/extract', async (req, res) => {
       "Read this journal entry and rate the day's overall mood on a 1-5 scale " +
       '(1 = rough/bad day, 5 = great day), and extract 2-4 short theme tags.\n\n' +
       (entry.raw_text || '(empty entry)');
+    // Sonnet (the shared default, 2026-08-28 cost pass) -- kept off Haiku
+    // deliberately: this becomes real history other features read back later
+    // (correlation data, insights), so a nuanced misread here compounds.
     const parsed = await askClaudeStructured(prompt, MoodSchema);
     if (!parsed) return res.status(502).json({ error: 'Could not analyze this entry' });
     const update = await supabase.from('journal_entries')
@@ -977,6 +990,9 @@ app.post('/api/analytics/insight', async (req, res) => {
       'Write 2-4 sentences pointing out any REAL pattern connecting these (for example ' +
       'habits vs mood, or habits vs tasks). If the data does not show a clear pattern, ' +
       'say so plainly instead of inventing one -- do not force a conclusion.';
+    // Sonnet (the shared default, 2026-08-28 cost pass) -- kept off Haiku
+    // deliberately: judging whether a pattern is real (vs. forcing one that
+    // isn't there) is exactly the kind of nuanced call worth the better tier.
     const insight = await askClaude(prompt, { maxTokens: 1024 });
     res.json({ insight });
   } catch (error) {
@@ -1017,6 +1033,8 @@ app.post('/api/health/insight', async (req, res) => {
       'Write 2-4 sentences pointing out any REAL pattern connecting these (for example ' +
       'sleep vs habit completion, or nutrition vs sleep). If the data does not show a ' +
       'clear pattern, say so plainly instead of inventing one -- do not force a conclusion.';
+    // Sonnet (the shared default, 2026-08-28 cost pass) -- same reasoning as
+    // /api/analytics/insight above.
     const insight = await askClaude(prompt, { maxTokens: 1024 });
     res.json({ insight });
   } catch (err) {
