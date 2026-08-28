@@ -68,6 +68,50 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## RESOLVED: the "waking up doesn't log" bug -- an uncaught 409 was crashing the whole server, not an auth issue
+Root-caused from real Railway logs Elo pasted after being asked for them.
+The earlier Google-login-loopback theory was wrong -- the actual cause was
+much simpler and had nothing to do with auth: `bot.launch()` (`lib/
+telegram.js`) never caught its own returned promise. Telegram's `getUpdates`
+answers with a `409: Conflict` for a few seconds during every Railway
+deploy, while the old container is still shutting down and the new one
+starts polling -- normal, harmless, self-resolving *if something catches
+it*. Nothing did, so it became an unhandled promise rejection and crashed
+the **entire Express process**, not just the Telegram feature -- wiping
+`pendingActions`/`conversationHistory` (both in-memory) for anyone with a
+card open at that exact moment.
+
+This explains exactly why bedtime kept working and wake-up didn't: going to
+bed is one button tap (`start_sleep`, a single Confirm/Cancel), so it
+rarely lands inside that few-second crash window. Waking up, after the
+2026-08-28 redesign a few entries below, needs THREE separate taps
+(confirm -> quality picker -> confirm again) -- three times the exposure to
+the same narrow window, which is almost certainly why it was the one Elo
+kept hitting, especially right after one of today's many deploys.
+
+**Fix:** `launchWithRetry()` wraps `bot.launch()` properly -- on rejection,
+logs the error and retries after 5s, up to 5 attempts, before giving up
+loudly (so a genuine persistent duplicate-instance problem, not just a
+transient deploy overlap, still surfaces in logs rather than silently
+hiding forever). The whole server no longer goes down over a few seconds of
+expected overlap during a deploy.
+
+**Verified:** isolated unit test of the retry logic against a mock `bot`
+object -- confirmed it retries on rejection, recovers once the mock starts
+succeeding, gives up cleanly after exactly 5 attempts, and critically that
+the Node process never crashes in any of these paths. **Could not
+reproduce the real 409 itself** (that needs an actual second poller, i.e. a
+real Railway deploy in flight) -- the fix targets the exact failure mode
+in the real log Elo provided, but the true end-to-end fix (a wake-up
+surviving an actual deploy-time restart without getting stuck) still needs
+Elo to notice it not recurring over the next few deploys.
+
+**Lesson for next time a Telegram bug looks auth-related:** check the
+actual Railway logs before building a fix on a theory. The loopback-auth
+suspicion was reasonable given the timing (Google login went live earlier
+the same day) but was still just a theory -- asking for real logs found
+the real, much simpler cause in one read.
+
 ## Claude model split: Opus -> Sonnet/Haiku by feature (2026-08-28)
 Elo asked me to check API costs -- $2 in 3 days, more than he expected. Root
 cause: every single Claude call in this app, across every feature, ran on
