@@ -9,6 +9,7 @@ const { askClaude, askClaudeStructured } = require('./lib/anthropic');
 const { getEntityContext, getJournalContext, getEntitiesWithDescriptions, getCorrelationData, getHealthContext } = require('./lib/context');
 const { localDateStr, localTimestampStr } = require('./lib/dates');
 const { getEffectiveDate } = require('./lib/habitDay');
+const { INTERNAL_SECRET } = require('./lib/internalAuth');
 const googleCalendar = require('./lib/google');
 const telegramBot = require('./lib/telegram');
 
@@ -98,6 +99,14 @@ app.use('/api', (req, res, next) => {
   // the login routes) the instant either DASHBOARD_PIN or
   // AUTHORIZED_GOOGLE_EMAIL got set. Caught live on production.
   if (AUTH_EXEMPT_PATHS.has(req.originalUrl.split('?')[0])) return next();
+  // Primary internal-call bypass (lib/internalAuth.js) -- a deterministic
+  // secret only this same process's own tool executors know, so the
+  // Telegram agent's writes never depend on Elo's own browser session
+  // (PIN/Google) or on correctly detecting a loopback IP, which was never
+  // actually confirmed against Railway's real networking. Checked before
+  // the IP check specifically so it's the one guaranteed path, not a
+  // fallback that only helps if the IP check happens to be right.
+  if (req.get('X-Internal-Secret') === INTERNAL_SECRET) return next();
   if (isLoopback(req.ip)) return next();
   if (process.env.DASHBOARD_PIN && req.get('X-Dashboard-Pin') === process.env.DASHBOARD_PIN) return next();
   if (hasValidSession(req)) return next();

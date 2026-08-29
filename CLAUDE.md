@@ -68,6 +68,72 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Telegram writes silently not happening: a real prompt-injection bug in the conversation-memory feature, plus a guaranteed internal-auth bypass (2026-08-29)
+Elo tried going to bed and waking up via Telegram again -- this time the bot
+never showed a Confirm button at all, just said something like "proposed
+start sleep, confirmed and executed" (and the same for waking up), and
+nothing landed on the dashboard. He suspected the Google-login gate again
+and asked for the dashboard to be updatable from Telegram "even though my
+dashboard mightve been logged out from google."
+
+**Root-caused by re-reading my own conversation-memory code (2026-08-27),
+not from logs this time.** `runAgentTurn` (`lib/agent.js`) injects a plain
+`role: 'assistant'` line into history every time a write is proposed
+(`'Proposed: X(...)'`) and `lib/telegram.js`'s `appendOutcomeNote` does the
+same after a real Confirm (`'[Confirmed and executed: ...]'`). The model
+sees these as things IT already said. On a later turn (e.g. if Elo's next
+message wasn't a clean button tap -- another text message, a garbled
+voice-note follow-up, anything before he actually pressed Confirm), Claude
+could see its own prior "Proposed:"/"[Confirmed and executed:]" phrasing in
+history and generate a plain-TEXT reply narrating a fake "confirmed and
+executed" completion, with no real tool call and no button ever shown.
+Nothing was actually written -- it just sounded like it was, exactly
+matching what Elo described for both bedtime and wake-up.
+
+**Fix:** both injected notes are now wrapped as `(Note: ...)` instead of
+bare imperative-sounding lines, and the system prompt gained an explicit
+instruction: these are historical facts to read, never to echo/paraphrase/
+imitate, and Claude must never tell Elo something was "confirmed" or
+"executed" unless a matching `(Note: confirmed and executed...)` line for
+THAT SPECIFIC action already exists in history.
+
+**Verified directly, both directions:** called `runAgentTurn` with a real
+proposal in history but NO confirm note (simulating "button never
+tapped") and asked "did that actually save?" -- it correctly did NOT
+claim success, it safely re-proposed the action instead of hallucinating
+a completion. Then repeated with a REAL `(Note: confirmed and executed...)`
+appended (simulating a genuine button tap) and asked the same question --
+it correctly said yes and described what was logged. Both outcomes are
+exactly right.
+
+**Second, independent fix, directly answering Elo's explicit ask:** a new
+`lib/internalAuth.js` generates a random secret once per process
+(`crypto.randomBytes`), shared automatically between `server.js` (checks
+it) and `lib/tools.js`/`lib/telegram.js`'s own internal `fetch()` calls
+(send it as `X-Internal-Secret`) purely because they're `require()`'d
+within the same Node process -- no env var, no Railway action needed. This
+is checked BEFORE the loopback-IP check in the auth gate, so the Telegram
+agent's writes no longer depend on correctly detecting a loopback IP (which
+had never actually been confirmed against Railway's real networking) or on
+Elo's own browser session (PIN entered / Google logged in) at all --
+exactly what he asked for, guaranteed by construction rather than by IP
+heuristics.
+
+**Verified this specifically, not just by inspection:** restarted the
+backend with `AUTHORIZED_GOOGLE_EMAIL` set (matching production's real
+auth-active state) and tested via the Mac's real LAN IP (a genuinely
+non-loopback path, simulating what a loopback-detection failure on Railway
+would look like) -- no credential still `401`s, the correct internal secret
+`200`s, a wrong secret still `401`s. Since this mechanism can't be exercised
+correctly from a separate test script (each `node -e` invocation is its own
+process with its own freshly-generated secret; only genuinely matters
+within the single real running process), this LAN-IP test is the closest
+verification possible without a live Telegram round-trip on Railway itself.
+
+**Real missed sleep logged from this request:** bed 2:00 AM / wake 10:00 AM
+on `2026-08-29`, correctly labeled `2026-08-28` under the "night of" rule
+above.
+
 ## Sleep entries now label by "night of," not wake date (2026-08-28)
 Elo: HOME's SLEEP card could show today's date for a completed entry before
 he'd gone to bed tonight -- confusing, since it read like it was describing
