@@ -68,6 +68,42 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Telegram agent's own sense of "today" ignored the bedtime-aware day boundary (2026-08-31)
+Elo: past midnight last night, before going to bed, he tried marking his
+Wind-Down Routine done via Telegram -- the bot asked whether he meant
+"today" (the new calendar day) instead of just doing it, contradicting the
+day-boundary rule already established for habits/journal (see the entry
+below this one): before bed, it's still the previous day.
+
+**Root cause:** `lib/agent.js`'s system prompt told the model "Today's
+local date is X" using the plain calendar date (`localDateStr(new Date())`)
+unconditionally -- it never knew about `getEffectiveDate()`
+(`lib/habitDay.js`), the bedtime-aware date every backend habit/journal
+route already enforces regardless of what date a caller sends. So the data
+itself was never actually at risk (the backend overrides the date either
+way), but the AGENT'S OWN REASONING used the wrong "today," making it ask a
+confusing, blocking clarifying question instead of just doing the action.
+
+**Fix:** `systemPrompt()` is now async and calls `getEffectiveDate()`
+directly (same-process import, no HTTP round-trip). The model gets BOTH
+dates explicitly labeled -- the literal calendar date for calendar
+events/tasks/general awareness, and the effective date for habits/journal
+specifically -- with an explicit instruction not to ask Elo which day he
+means when they differ, just use the effective date. Computed once per
+`runAgentTurn` call (not per internal turn), since a single call finishes
+in seconds, well inside the window where the effective date can't change.
+
+**Verified against the exact real scenario, not just re-read:** temporarily
+set the most recent real bedtime 2 days back (simulating "hasn't gone to
+bed since," deferring the effective date), then called `runAgentTurn('mark
+my wind-down routine done')` -- it correctly asked which sub-tasks, with NO
+mention of "today" ambiguity; followed up with "all of them" and confirmed
+via `executeActions` that every sub-task and the cascaded parent wrote
+`completed_date` as the DEFERRED date, not the literal new day. Reverted
+every touched value (the 5 test sub-task completions and the real bed_time)
+immediately after, confirmed via a fresh `GET` that real data matched
+exactly what it was before the test.
+
 ## Telegram writes silently not happening: a real prompt-injection bug in the conversation-memory feature, plus a guaranteed internal-auth bypass (2026-08-29)
 Elo tried going to bed and waking up via Telegram again -- this time the bot
 never showed a Confirm button at all, just said something like "proposed
