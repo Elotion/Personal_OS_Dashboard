@@ -68,6 +68,56 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Calendar upgraded from write-through to a real daily sync with deletion handling (2026-08-31)
+Same day as the write-through version above, Elo pushed back: "why can't we
+make it better by having the memory of the entire google calendar." Fair
+question -- the original scoping-down was about sequencing (no scheduler
+existed in this app yet, nothing needed calendar history at rest), not a
+hard limitation, and both of those reasons were gone within the same
+session (the scheduler now exists; the insight feature now wants the
+history). Also surfaced a real gap the write-through version could never
+close on its own: it could add/update events but never learn about a
+deletion -- something Elo cancelled in Google would just linger in the
+local copy forever.
+
+**`syncCalendarWindow()` (`lib/google.js`)** -- one API call per calendar
+(not one per day, which would be needlessly slow across a 120-day window)
+covering a rolling window, 30 days back through 90 days forward, across
+every visible calendar. `persistAndReconcile()` (replacing the old
+`persistEvents`) upserts by `google_event_id` same as before, but ALSO
+diffs against what's already stored for that exact date and deletes
+anything no longer present in the fresh fetch -- so a cancelled event
+actually disappears from history, not just never-added. This same
+reconcile logic now backs BOTH the wide window sync AND the original
+single-day `listEventsForDate()` path (HOME/Telegram's live fetch), so a
+day that's actively being viewed gets near-real-time deletion handling on
+top of the once-daily full sweep.
+
+**Scheduled via `lib/scheduler.js`, 3am daily, no Telegram message
+involved** -- pure background maintenance, logged server-side only (same
+"nothing for Elo to act on" pattern as any other infra task, unlike the
+nudges which exist specifically to message him).
+
+**Cost, since Elo asked before agreeing to build this:** effectively $0 --
+Google Calendar API has a generous free quota nowhere close to being
+threatened by one daily sync for one person, Supabase storage cost for a
+few thousand small event rows is negligible, and the sync runs inside the
+already-running server process, no new compute. Confirmed nothing here
+touches the Claude/Anthropic billing this session already worked to bring
+down.
+
+**Verified directly against the real connected calendar, not just
+re-read:** ran the actual sync -- 121 days covered, 87 real events found
+across multiple calendars (Birthdays/Anniversaries, Events, Work, School)
+in 17.4 seconds; spot-checked the stored rows matched exactly (calendar
+name, title, times); confirmed `/api/analytics/correlation` now reflects
+real busy-hour data pulled from this. **Reconciliation tested with a real
+deletion scenario**, not just reasoned about: inserted a fake event row
+directly into the table (simulating something Google no longer returns),
+re-fetched that date through the live route, and confirmed the fake row
+was correctly removed while the four real events for that day were left
+untouched.
+
 ## Calendar history + proactive Telegram nudges (2026-08-31)
 Elo picked two of the gaps flagged in an earlier "what could be better"
 discussion: calendar data was never stored (so it couldn't feed
