@@ -68,6 +68,96 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Calendar history + proactive Telegram nudges (2026-08-31)
+Elo picked two of the gaps flagged in an earlier "what could be better"
+discussion: calendar data was never stored (so it couldn't feed
+correlation/insight), and the Telegram bot was purely reactive (never
+initiates anything). Detailed follow-up on the nudges specifically --
+explicitly NOT a generic morning briefing (he already checks CRM/calendar
+himself right after his phone-free morning routine, so that would be
+redundant); the one morning nudge worth having is stale "THIS WEEK" tasks,
+timed off his actual wake-up event rather than a fixed clock time.
+
+**Calendar history, write-through, no separate sync job.** Calendar was
+deliberately never persisted before now (HOME only ever needed a live
+"today" view). Rather than build a real background sync (no scheduler
+existed in this app until this same session), `lib/google.js`'s
+`listEventsForDate()` now also upserts each event into a new
+`calendar_events_log` table as a side effect of the same fetch HOME/
+Telegram already make -- keyed by `google_event_id` so re-fetching the same
+day refreshes rather than duplicates. **Real, accepted tradeoff:** coverage
+depends on a day actually being looked at/asked about at least once -- a
+day nobody ever views has no history. `getCorrelationData()`
+(`lib/context.js`) now aggregates this into `calendar_events_count`/
+`calendar_busy_hours` per day, and `/api/analytics/insight`'s prompt
+(`server.js`) includes both, with an explicit instruction not to read a
+string of zero-event days as "always free" since it may just mean the
+calendar was never checked that day.
+
+Migration (Supabase SQL editor):
+```sql
+CREATE TABLE calendar_events_log (
+  id SERIAL PRIMARY KEY,
+  google_event_id TEXT NOT NULL UNIQUE,
+  event_date DATE NOT NULL,
+  calendar_name TEXT,
+  title TEXT,
+  start_time TIMESTAMP,
+  end_time TIMESTAMP,
+  is_all_day BOOLEAN DEFAULT FALSE,
+  synced_at TIMESTAMP DEFAULT NOW()
+);
+ALTER TABLE calendar_events_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable all for public" ON calendar_events_log FOR ALL USING (true) WITH CHECK (true);
+```
+Degrades gracefully like every other pre-migration table in this app --
+confirmed directly: the live calendar route still returns real events
+correctly even with the table missing (`PGRST205`, matched and silenced by
+a regex check, not left to crash anything), and `/api/analytics/correlation`
+returns `0`/`0` for calendar fields rather than erroring.
+
+**Proactive Telegram nudges, new `lib/scheduler.js`** (added `node-cron` --
+this app had no scheduler of any kind before now). All three are
+deliberately conditional -- silent unless there's actually something to
+say, matching Elo's own framing that the value is catching real misses,
+not noise:
+- **Morning stale-task nudge** (`lib/telegram.js`) -- NOT on the cron
+  schedule at all; a `setTimeout` fired ~90 minutes after a real
+  `end_sleep` execution (matching his stated routine length), checking for
+  tasks in `timeframe: 'THIS WEEK'` with `created_at` older than 7 days.
+  Silent if none exist.
+- **Evening check-in, 9pm daily** (cron) -- open habits, no journal entry
+  yet today (via `getEffectiveDate()`, consistent with the rest of the
+  day-boundary system), or unfinished starred tasks. Silent if all three
+  are already clear.
+- **Food reminders, 10am/2pm/8pm daily** (cron) -- skipped if anything was
+  logged to `nutrition_log` in the last ~90 minutes, so it doesn't
+  double-ping right after a real log.
+- `cron.schedule(...)` passes `timezone: 'America/Los_Angeles'` explicitly
+  on every schedule rather than relying on the server's own `TZ` env var --
+  this app has hit enough TZ-default bugs that being explicit here, not
+  implicit, is the safer choice.
+
+**Real, previously-undiscovered bug caught while building this:**
+`POST /api/tasks` never explicitly wrote `created_at`, relying on the
+column's own UTC-evaluated `DEFAULT NOW()` -- the same bug class already
+fixed for `nutrition_log`/`journal_entries`, just missed here. Caught
+because the morning nudge's stale-task detection depends on this column
+being accurate; fixed to use `localTimestampStr()` like everywhere else.
+
+**Verified directly against real data, not just re-read:** confirmed the
+evening check-in correctly listed the real open habits and missing journal
+entry for today; confirmed the food reminder correctly stayed silent given
+a real meal logged 27 minutes earlier; inserted a real test task dated 11
+days old and confirmed the stale-task detector correctly flagged it, then
+deleted it; confirmed a real calendar fetch (Sep 21, 2026 -- Elo's actual
+class schedule) attempted to persist and degraded silently pre-migration,
+with the live calendar card itself unaffected either way.
+
+**Still needs Elo:** run the migration above in Supabase's SQL editor for
+calendar history to actually start accumulating -- nothing else changes
+until then, the live calendar card already works exactly as before.
+
 ## Telegram agent's own sense of "today" ignored the bedtime-aware day boundary (2026-08-31)
 Elo: past midnight last night, before going to bed, he tried marking his
 Wind-Down Routine done via Telegram -- the bot asked whether he meant

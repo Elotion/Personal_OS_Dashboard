@@ -213,7 +213,13 @@ app.get('/api/tasks', (req, res) => {
 
 app.post('/api/tasks', (req, res) => {
   const { title, entity_id, timeframe, is_key } = req.body;
-  handle(res, supabase.from('tasks').insert([{ title, entity_id, timeframe, is_key: !!is_key }]).select());
+  // created_at previously relied on the column's own DEFAULT NOW() (UTC,
+  // unfixed) instead of localTimestampStr() -- the same bug class already
+  // fixed for nutrition_log/journal_entries, just missed here. Caught
+  // while adding the morning stale-task nudge (lib/telegram.js), which
+  // computes task age from this exact column.
+  handle(res, supabase.from('tasks')
+    .insert([{ title, entity_id, timeframe, is_key: !!is_key, created_at: localTimestampStr(new Date()) }]).select());
 });
 
 // Phase 3b: freeform text -> structured task fields, via Claude. Deliberately
@@ -1006,15 +1012,20 @@ app.post('/api/analytics/insight', async (req, res) => {
     const lines = correlation.map((d) =>
       `${d.date}: habits ${d.habits_completed}/${d.habits_total}` +
       (d.habit_completion_rate != null ? ` (${Math.round(d.habit_completion_rate * 100)}%)` : '') +
-      `, tasks completed ${d.tasks_completed_count}, mood ${d.mood != null ? d.mood + '/5' : 'n/a'}`
+      `, tasks completed ${d.tasks_completed_count}, mood ${d.mood != null ? d.mood + '/5' : 'n/a'}` +
+      `, calendar ${d.calendar_events_count} event${d.calendar_events_count === 1 ? '' : 's'}` +
+      (d.calendar_busy_hours > 0 ? ` (${d.calendar_busy_hours}h busy)` : '')
     ).join('\n');
     const prompt =
-      'Here is day-by-day data from a personal dashboard: habit completion rate, ' +
-      'tasks completed, and self-reported mood (1-5, higher is better) for each day.\n\n' +
+      'Here is day-by-day data from a personal dashboard: habit completion rate, tasks completed, ' +
+      'self-reported mood (1-5, higher is better), and calendar load (event count + scheduled hours) ' +
+      'for each day. A day showing 0 calendar events may mean a genuinely free day, or may just mean ' +
+      'the calendar was never checked that day (history only exists once a day is actually looked at) -- ' +
+      "don't treat a string of 0s as meaningful unless it's plausible Elo really had that many free days.\n\n" +
       lines + '\n\n' +
       'Write 2-4 sentences pointing out any REAL pattern connecting these (for example ' +
-      'habits vs mood, or habits vs tasks). If the data does not show a clear pattern, ' +
-      'say so plainly instead of inventing one -- do not force a conclusion.';
+      'habits vs mood, tasks vs mood, or a busy calendar day vs habit completion). If the data does not ' +
+      'show a clear pattern, say so plainly instead of inventing one -- do not force a conclusion.';
     // Sonnet (the shared default, 2026-08-28 cost pass) -- kept off Haiku
     // deliberately: judging whether a pattern is real (vs. forcing one that
     // isn't there) is exactly the kind of nuanced call worth the better tier.
