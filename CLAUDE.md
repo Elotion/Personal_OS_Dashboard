@@ -163,10 +163,38 @@ subscriptions, transactions, summary, insight) return a clean 404 with
 crash; loaded the real FINANCE tab in a browser pre-migration and confirmed
 it shows the "isn't set up yet" message with no unexpected console errors
 (only the same three expected pre-migration 404s, matching the pattern
-already documented for `profile`/`health_goals`). **Not yet verified**: the
-actual CSV parse/preview/commit round-trip, account/subscription CRUD, and
-the AI insight generator all need the migration to actually run first --
-that's next, once Elo runs the SQL below.
+already documented for `profile`/`health_goals`).
+
+**Full round-trip re-verified after Elo ran the migration (2026-09-01), all
+test data cleaned up afterward:** created a real TEST Checking account
+($1,500.50) and TEST Credit Card ($420.75 debt) and a TEST Streaming
+subscription ($15.99/mo) via curl, confirmed `GET /api/finance/summary`
+computed net worth/assets/debts/subscription-total correctly by hand-check;
+built a synthetic 6-row bank-export CSV (never real bank data -- generated
+locally, never pasted into chat) with a single signed-amount column, MM/DD/
+YYYY dates, and a description field with an embedded comma inside quotes
+(`"AMAZON.COM*A1B2C3, SEATTLE WA"`) specifically to stress-test `csv-parse`'s
+quoted-field handling -- `POST /api/finance/transactions/parse-csv` parsed
+all 6 rows correctly, Claude correctly identified the amount/date/description
+columns and the MM/DD/YYYY format, dates normalized correctly to ISO, and the
+quoted comma did NOT get misread as a column break. Committed the preview via
+`POST /api/finance/transactions/commit` and confirmed all 6 rows landed
+exactly as parsed via a fresh `GET /api/finance/transactions`.
+`POST /api/finance/insight` against this real (synthetic) transaction data
+correctly summarized income/spend, called out the two largest unlabeled
+purchases as worth checking, and explicitly declined to call 6 transactions
+across 6 days a "pattern" -- exactly the grounded, non-overclaiming behavior
+this route's prompt was written for. Then a full live-browser pass: loaded
+the real FINANCE tab and confirmed every number matched the API exactly;
+clicked a real account balance, edited it inline, hit SAVE, and confirmed via
+a fresh `GET /api/finance/accounts` that it was a genuine persisted write
+(777.77), not just optimistic local state. All test accounts/subscription/
+transactions deleted afterward via individual DELETE calls (not a bulk wipe);
+confirmed via both a fresh curl and a **fresh browser tab** (this session's
+known console-history-persists-across-reload quirk, documented elsewhere in
+this file, means a same-tab reload isn't proof by itself) that FINANCE is
+back to a genuinely empty state with zero console errors -- "No accounts
+yet." / "No transactions yet." everywhere, not leftover test residue.
 
 Migration (Supabase SQL editor):
 ```sql
@@ -209,9 +237,8 @@ CREATE TABLE finance_subscriptions (
 ALTER TABLE finance_subscriptions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Enable all for public" ON finance_subscriptions FOR ALL USING (true) WITH CHECK (true);
 ```
-**Still needs Elo:** run the migration above in Supabase's SQL editor --
-nothing else changes until then, the tab already degrades cleanly in the
-meantime.
+Migration confirmed run 2026-09-01 -- FINANCE is fully live now, not just
+code-complete. Nothing left to do here except actually use it.
 
 ## Calendar upgraded from write-through to a real daily sync with deletion handling (2026-08-31)
 Same day as the write-through version above, Elo pushed back: "why can't we
@@ -2043,6 +2070,13 @@ exactly this reason).
 
 ## What's real vs. still mock (as of this handoff)
 **Wired to Supabase, persists across refresh:**
+- FINANCE tab — full CRUD on accounts/subscriptions, CSV transaction import (AI column
+  mapping via Claude, preview-then-commit), net worth/spend summary, AI spending insight.
+  Migration run and fully re-verified against real (test) data 2026-09-01 — see the dated
+  "FINANCE tab built" section above for the complete writeup. Not real yet: live bank
+  sync (deliberately ruled out, needs a paid aggregator) and live investment pricing
+  (a real, deliberately deferred follow-up); HOME's Finance Pulse widget is still
+  hardcoded mock data, not yet wired to this real `finance_accounts` data.
 - Tasks — full CRUD: create, star (`is_key`), archive/restore, delete, drag between
   timeframes. This one table backs three UI surfaces at once:
   - CRM tab — the task list itself
@@ -3473,9 +3507,10 @@ from.
    run with `CI=true` -- that's the one env var that changes whether ESLint
    warnings are cosmetic or fatal, and it's exactly the difference between
    this machine and every real deploy host.
-9. **Finance** — moved up out of its original last-in-sequence slot at Elo's explicit
+9. ~~Finance~~ — moved up out of its original last-in-sequence slot at Elo's explicit
    request ("I am ready for the finance tab"), same as HEALTH (step 10) was earlier.
-   Built and code-verified 2026-09-01, migration not yet run by Elo — see the dated
+   Built, migration run, and fully re-verified against real (test) data 2026-09-01 —
+   see the dated
    "FINANCE tab built" section above for the full writeup. Landed on CSV import for
    transaction history + manual account-balance entry, not live bank sync (real bank
    aggregation needs a paid service like Plaid at production volume, contradicting
