@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const supabase = require('./supabaseClient');
 const { z } = require('zod');
+const { parse: parseCsv } = require('csv-parse/sync');
 const { OAuth2Client } = require('google-auth-library');
 const { askClaude, askClaudeStructured } = require('./lib/anthropic');
 const { getEntityContext, getJournalContext, getEntitiesWithDescriptions, getCorrelationData, getHealthContext } = require('./lib/context');
@@ -149,9 +150,15 @@ app.post('/api/auth/google-verify', async (req, res) => {
 });
 
 // small helper so every route doesn't repeat the same error handling
-function handle(res, promise) {
+// Optional `tableName` gives a clean 404 for a not-yet-migrated table
+// (matching the pattern already used by hand in routes like GET /api/sleep)
+// instead of forwarding Supabase's raw PGRST205 message as a 400.
+function handle(res, promise, tableName) {
   return promise.then(({ data, error }) => {
     if (error) {
+      if (missingTable(error, tableName)) {
+        return res.status(404).json({ error: tableName + ' table does not exist yet' });
+      }
       console.error(error);
       return res.status(400).json({ error: error.message });
     }
@@ -1199,6 +1206,232 @@ app.put('/api/calendar/calendars', async (req, res) => {
     }
     console.error(err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------- FINANCE (Phase 9, 2026-09-01) ----------------
+// Elo, on why he doesn't want live bank sync: "I honestly don't want to
+// spend any money at all with this one while still having a live update" --
+// no free option guarantees that for real bank/card balances (unlike stock
+// prices, which are public data), so accounts/balances are entered directly
+// and transaction history comes from CSV exports Elo downloads from his own
+// bank -- $0, no third party ever touches his real bank credentials.
+// Investment live-pricing (a genuinely free option, via a public stock-price
+// API) is intentionally deferred -- "we will figure the live part later on."
+
+app.get('/api/finance/accounts', (req, res) => {
+  handle(res, supabase.from('finance_accounts').select('*').order('sort_order').order('id'), 'finance_accounts');
+});
+app.post('/api/finance/accounts', (req, res) => {
+  const { name, type, institution, current_balance, credit_limit, is_debt, sort_order } = req.body;
+  handle(res, supabase.from('finance_accounts').insert([{
+    name, type, institution: institution || null,
+    current_balance: current_balance || 0, credit_limit: credit_limit || null,
+    is_debt: !!is_debt, sort_order: sort_order || 0,
+  }]).select());
+});
+app.put('/api/finance/accounts/:id', (req, res) => {
+  handle(res, supabase.from('finance_accounts')
+    .update({ ...req.body, updated_at: localTimestampStr(new Date()) }).eq('id', req.params.id).select());
+});
+app.delete('/api/finance/accounts/:id', (req, res) => {
+  handle(res, supabase.from('finance_accounts').delete().eq('id', req.params.id));
+});
+
+app.get('/api/finance/subscriptions', (req, res) => {
+  handle(res, supabase.from('finance_subscriptions').select('*').order('name'), 'finance_subscriptions');
+});
+app.post('/api/finance/subscriptions', (req, res) => {
+  const { name, amount, billing_cycle, next_renewal_date } = req.body;
+  handle(res, supabase.from('finance_subscriptions')
+    .insert([{ name, amount, billing_cycle: billing_cycle || 'monthly', next_renewal_date: next_renewal_date || null }]).select());
+});
+app.put('/api/finance/subscriptions/:id', (req, res) => {
+  handle(res, supabase.from('finance_subscriptions').update(req.body).eq('id', req.params.id).select());
+});
+app.delete('/api/finance/subscriptions/:id', (req, res) => {
+  handle(res, supabase.from('finance_subscriptions').delete().eq('id', req.params.id));
+});
+
+app.get('/api/finance/transactions', (req, res) => {
+  let q = supabase.from('finance_transactions').select('*').order('txn_date', { ascending: false }).limit(1000);
+  if (req.query.account_id) q = q.eq('account_id', req.query.account_id);
+  handle(res, q, 'finance_transactions');
+});
+app.delete('/api/finance/transactions/:id', (req, res) => {
+  handle(res, supabase.from('finance_transactions').delete().eq('id', req.params.id));
+});
+
+// MM/DD/YYYY (the overwhelmingly common US bank export format) unless the
+// AI column-mapping explicitly flagged DD/MM -- never guesses beyond that;
+// an unrecognized format returns null and that row gets dropped rather than
+// silently misdating a real transaction.
+function normalizeDate(raw, format) {
+  if (!raw) return null;
+  const str = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
+  const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (m) {
+    let [, a, b, yr] = m;
+    if (yr.length === 2) yr = '20' + yr;
+    const [mo, da] = format === 'DD/MM/YYYY' ? [b, a] : [a, b];
+    return yr + '-' + mo.padStart(2, '0') + '-' + da.padStart(2, '0');
+  }
+  return null;
+}
+
+// Bank CSV exports vary a lot (one signed amount column vs. separate debit/
+// credit columns, different date formats, extra columns like a running
+// balance) -- rather than hardcode one bank's layout, Claude looks at the
+// header + a few real sample rows and identifies which columns are which.
+// Returns a PREVIEW only -- nothing is saved until /commit, same
+// review-before-create principle as CRM's AI ADD.
+app.post('/api/finance/transactions/parse-csv', async (req, res) => {
+  try {
+    const { csv_text } = req.body;
+    if (!csv_text) return res.status(400).json({ error: 'csv_text is required' });
+
+    const rows = parseCsv(csv_text, { skip_empty_lines: true, relax_column_count: true });
+    if (rows.length < 2) return res.status(400).json({ error: 'CSV has no data rows' });
+
+    const header = rows[0];
+    const sampleRows = rows.slice(1, 6);
+
+    const ColumnMapSchema = z.object({
+      date_column: z.number().int().describe('0-based index of the column with the transaction date'),
+      description_column: z.number().int().describe('0-based index of the column with the merchant/description'),
+      amount_column: z.number().int().nullable().describe('0-based index of a single signed amount column (negative = money out), or null if split into separate debit/credit columns'),
+      debit_column: z.number().int().nullable().describe('0-based index of a debit/withdrawal column, or null'),
+      credit_column: z.number().int().nullable().describe('0-based index of a credit/deposit column, or null'),
+      date_format: z.enum(['MM/DD/YYYY', 'YYYY-MM-DD', 'DD/MM/YYYY', 'other']).describe('The date format used in this file'),
+    });
+    const prompt =
+      'This is a bank/credit-card CSV export. Header row:\n' + header.join(' | ') + '\n\n' +
+      'Sample data rows:\n' + sampleRows.map((r) => r.join(' | ')).join('\n') + '\n\n' +
+      'Identify which columns contain the transaction date, description/merchant, and amount. Some ' +
+      "banks use one signed amount column; others split into separate debit and credit columns -- set " +
+      'amount_column for the former OR debit_column/credit_column for the latter, never both.';
+    const mapping = await askClaudeStructured(prompt, ColumnMapSchema);
+    if (!mapping) return res.status(502).json({ error: 'Could not understand this CSV format' });
+
+    const parsedNum = (v) => {
+      const n = parseFloat(String(v ?? '').replace(/[^0-9.-]/g, ''));
+      return isNaN(n) ? null : n;
+    };
+
+    const transactions = rows.slice(1).map((r) => {
+      const date = normalizeDate(r[mapping.date_column], mapping.date_format);
+      const description = (r[mapping.description_column] || '(no description)').trim();
+      let amount = null;
+      if (mapping.amount_column != null) {
+        amount = parsedNum(r[mapping.amount_column]);
+      } else {
+        const debit = mapping.debit_column != null ? (parsedNum(r[mapping.debit_column]) || 0) : 0;
+        const credit = mapping.credit_column != null ? (parsedNum(r[mapping.credit_column]) || 0) : 0;
+        amount = credit - Math.abs(debit);
+      }
+      return { date, description, amount };
+    }).filter((t) => t.date && t.amount != null);
+
+    res.json({ transactions, rowCount: rows.length - 1, parsedCount: transactions.length, mapping });
+  } catch (err) {
+    console.error(err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/finance/transactions/commit', async (req, res) => {
+  const { account_id, transactions } = req.body;
+  if (!account_id || !Array.isArray(transactions) || transactions.length === 0) {
+    return res.status(400).json({ error: 'account_id and a non-empty transactions array are required' });
+  }
+  const rows = transactions.map((t) => ({
+    account_id, txn_date: t.date, description: t.description, amount: t.amount, category: t.category || null,
+  }));
+  const { data, error } = await supabase.from('finance_transactions').insert(rows).select();
+  if (error) { console.error(error); return res.status(400).json({ error: error.message }); }
+  res.json({ inserted: data.length });
+});
+
+app.get('/api/finance/summary', async (req, res) => {
+  try {
+    const accountsResult = await supabase.from('finance_accounts').select('*').order('sort_order').order('id');
+    if (accountsResult.error) throw accountsResult.error;
+    const accounts = accountsResult.data;
+
+    const totalAssets = accounts.filter((a) => !a.is_debt).reduce((s, a) => s + Number(a.current_balance), 0);
+    const totalDebts = accounts.filter((a) => a.is_debt).reduce((s, a) => s + Number(a.current_balance), 0);
+
+    // Calendar-date arithmetic, not raw ms subtraction -- same DST-safety
+    // reasoning as getCorrelationData/getHealthContext (lib/context.js).
+    const now = new Date();
+    const monthStart = localDateStr(new Date(now.getFullYear(), now.getMonth(), 1));
+    const txResult = await supabase.from('finance_transactions').select('amount').gte('txn_date', monthStart);
+    let monthSpend = 0, monthIncome = 0;
+    if (!txResult.error) {
+      txResult.data.forEach((t) => { if (t.amount < 0) monthSpend += -t.amount; else monthIncome += t.amount; });
+    }
+
+    const subsResult = await supabase.from('finance_subscriptions').select('amount, billing_cycle').eq('is_active', true);
+    let monthlySubscriptionTotal = 0;
+    if (!subsResult.error) {
+      subsResult.data.forEach((s) => {
+        const amt = Number(s.amount);
+        if (s.billing_cycle === 'yearly') monthlySubscriptionTotal += amt / 12;
+        else if (s.billing_cycle === 'weekly') monthlySubscriptionTotal += amt * 4.33;
+        else monthlySubscriptionTotal += amt;
+      });
+    }
+
+    const round2 = (n) => Math.round(n * 100) / 100;
+    res.json({
+      net_worth: round2(totalAssets - totalDebts),
+      total_assets: round2(totalAssets),
+      total_debts: round2(totalDebts),
+      month_spend: round2(monthSpend),
+      month_income: round2(monthIncome),
+      monthly_subscription_total: round2(monthlySubscriptionTotal),
+      accounts,
+    });
+  } catch (error) {
+    if (missingTable(error, 'finance_accounts')) return res.status(404).json({ error: 'finance tables do not exist yet' });
+    console.error(error);
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Spending pattern observations grounded in real transactions -- explicitly
+// NOT investment/financial advice (never suggests what to do with money
+// beyond "this spending category looks high"), matching the same
+// not-medical-advice framing HEALTH's goals already use for a sensitive
+// domain. Sonnet (shared default) -- judging what's a real pattern worth
+// flagging vs. noise is exactly the kind of call worth the better tier.
+app.post('/api/finance/insight', async (req, res) => {
+  try {
+    const days = Math.min(365, Math.max(1, parseInt(req.query.days, 10) || 30));
+    const now = new Date();
+    const windowStart = localDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - days));
+    const txResult = await supabase.from('finance_transactions')
+      .select('txn_date, description, amount').gte('txn_date', windowStart).order('txn_date');
+    if (txResult.error) throw txResult.error;
+    if (txResult.data.length === 0) {
+      return res.json({ insight: 'Not enough transaction data yet for a real insight -- import a CSV of real transactions first.' });
+    }
+    const lines = txResult.data.map((t) => `${t.txn_date}: ${t.description} — ${t.amount > 0 ? '+' : ''}$${t.amount}`).join('\n');
+    const prompt =
+      `Here are Elo's real transactions from the past ${days} days:\n\n${lines}\n\n` +
+      'Write a short, honest summary: total spend and income, and 2-3 REAL, SPECIFIC observations about ' +
+      'where the money is actually going -- call out anything that stands out, and suggest one or two ' +
+      'concrete things worth reconsidering if something looks avoidable. This is spending-pattern feedback ' +
+      'only, never investment or financial advice. Do not invent a category or pattern that is not ' +
+      'actually in the data, and do not give generic budgeting platitudes -- ground everything in what is ' +
+      'actually here.';
+    const insight = await askClaude(prompt, { maxTokens: 1024 });
+    res.json({ insight });
+  } catch (error) {
+    if (missingTable(error, 'finance_transactions')) return res.status(404).json({ error: 'finance tables do not exist yet' });
+    console.error(error);
+    res.status(400).json({ error: error.message });
   }
 });
 

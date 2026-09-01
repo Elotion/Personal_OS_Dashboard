@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.120.0",
     "@supabase/supabase-js": "^2.112.3",
     "cors": "^2.8.6",
+    "csv-parse": "^7.0.2",
     "dotenv": "^16.6.1",
     "express": "^4.22.2",
     "google-auth-library": "^11.0.2",

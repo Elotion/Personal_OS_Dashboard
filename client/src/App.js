@@ -6,6 +6,7 @@ import CrmTab from './pages/CrmTab';
 import BrainTab from './pages/BrainTab';
 import JournalTab from './pages/JournalTab';
 import HealthTab from './pages/HealthTab';
+import FinanceTab from './pages/FinanceTab';
 import EntityPanel from './components/EntityPanel';
 
 // ---- talking to the real backend ----
@@ -553,6 +554,22 @@ export default function App() {
   const [healthInsightText, setHealthInsightText] = useState('');
   const [healthInsightGenerating, setHealthInsightGenerating] = useState(false);
 
+  // ---- FINANCE tab state (2026-09-01) ----
+  const [financeSummary, setFinanceSummary] = useState(null);
+  const [financeSummaryLoading, setFinanceSummaryLoading] = useState(false);
+  const [financeMigrated, setFinanceMigrated] = useState(true); // flips false on a real 404, see loadFinanceSummary
+  const [financeSubscriptions, setFinanceSubscriptions] = useState([]);
+  const [financeTransactions, setFinanceTransactions] = useState([]);
+  const [financeInsightText, setFinanceInsightText] = useState('');
+  const [financeInsightGenerating, setFinanceInsightGenerating] = useState(false);
+  const [financeInsightDays, setFinanceInsightDays] = useState(30);
+  const [financeAddAccountOpen, setFinanceAddAccountOpen] = useState(false);
+  const [financeAddSubOpen, setFinanceAddSubOpen] = useState(false);
+  const [financeCsvPreview, setFinanceCsvPreview] = useState(null); // {transactions, rowCount, parsedCount, mapping}
+  const [financeCsvParsing, setFinanceCsvParsing] = useState(false);
+  const [financeCsvAccountId, setFinanceCsvAccountId] = useState('');
+  const [financeCsvCommitting, setFinanceCsvCommitting] = useState(false);
+
   const selectedEntityIdRef = useRef(selectedEntityId);
   selectedEntityIdRef.current = selectedEntityId;
 
@@ -1028,6 +1045,89 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
+  // ---- FINANCE tab handlers (2026-09-01) ----
+  // /api/finance/summary 404s cleanly pre-migration (same graceful-degradation
+  // pattern as sleep_log/health_goals before their own migrations ran) --
+  // financeMigrated flips false only on that specific 404, so FinanceTab can
+  // show "run this migration" instead of a raw error or empty dashboard.
+  const loadFinanceData = () => {
+    setFinanceSummaryLoading(true);
+    fetch('/api/finance/summary')
+      .then((res) => {
+        if (res.status === 404) { setFinanceMigrated(false); return null; }
+        if (!res.ok) throw new Error('GET /api/finance/summary failed');
+        setFinanceMigrated(true);
+        return res.json();
+      })
+      .then((result) => { if (result) setFinanceSummary(result); })
+      .catch((e) => console.error(e))
+      .finally(() => setFinanceSummaryLoading(false));
+    apiGet('/api/finance/subscriptions').then(setFinanceSubscriptions).catch(() => {});
+    apiGet('/api/finance/transactions').then(setFinanceTransactions).catch(() => {});
+  };
+  useEffect(() => {
+    if (activeTab === 'FINANCE') loadFinanceData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const addFinanceAccount = (account) => {
+    apiSend('/api/finance/accounts', 'POST', account)
+      .then(() => { setFinanceAddAccountOpen(false); loadFinanceData(); })
+      .catch((e) => console.error(e));
+  };
+  const updateFinanceAccount = (id, patch) => {
+    // Optimistic -- same fire-and-forget convention as everywhere else here.
+    setFinanceSummary((s) => s && { ...s, accounts: s.accounts.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
+    apiSend('/api/finance/accounts/' + id, 'PUT', patch)
+      .then(() => loadFinanceData())
+      .catch((e) => console.error(e));
+  };
+  const deleteFinanceAccount = (id) => {
+    setFinanceSummary((s) => s && { ...s, accounts: s.accounts.filter((a) => a.id !== id) });
+    fetch('/api/finance/accounts/' + id, { method: 'DELETE' }).then(() => loadFinanceData()).catch((e) => console.error(e));
+  };
+
+  const addFinanceSubscription = (sub) => {
+    apiSend('/api/finance/subscriptions', 'POST', sub)
+      .then(() => { setFinanceAddSubOpen(false); loadFinanceData(); })
+      .catch((e) => console.error(e));
+  };
+  const deleteFinanceSubscription = (id) => {
+    setFinanceSubscriptions((s) => s.filter((x) => x.id !== id));
+    fetch('/api/finance/subscriptions/' + id, { method: 'DELETE' }).catch((e) => console.error(e));
+  };
+
+  // CSV import: parse (preview only, nothing saved) -> pick which account ->
+  // commit. Same review-before-create principle as CRM's AI ADD -- Elo never
+  // has a bank statement silently imported without seeing it first.
+  const parseFinanceCsv = (csvText) => {
+    setFinanceCsvParsing(true);
+    setFinanceCsvPreview(null);
+    apiSend('/api/finance/transactions/parse-csv', 'POST', { csv_text: csvText })
+      .then((result) => setFinanceCsvPreview(result))
+      .catch((e) => { console.error(e); alert('Could not parse that CSV -- check the file and try again.'); })
+      .finally(() => setFinanceCsvParsing(false));
+  };
+  const cancelFinanceCsvPreview = () => { setFinanceCsvPreview(null); setFinanceCsvAccountId(''); };
+  const commitFinanceCsv = () => {
+    if (!financeCsvAccountId || !financeCsvPreview) return;
+    setFinanceCsvCommitting(true);
+    apiSend('/api/finance/transactions/commit', 'POST', {
+      account_id: financeCsvAccountId, transactions: financeCsvPreview.transactions,
+    })
+      .then(() => { cancelFinanceCsvPreview(); loadFinanceData(); })
+      .catch((e) => { console.error(e); alert('Import failed -- nothing was saved.'); })
+      .finally(() => setFinanceCsvCommitting(false));
+  };
+
+  const generateFinanceInsight = () => {
+    setFinanceInsightGenerating(true);
+    apiSend('/api/finance/insight?days=' + financeInsightDays, 'POST', {})
+      .then((result) => setFinanceInsightText(result.insight))
+      .catch((e) => console.error(e))
+      .finally(() => setFinanceInsightGenerating(false));
+  };
+
   // ---- BRAIN handlers ----
   const openEntityDetail = (id) => {
     setSelectedEntityId(id);
@@ -1471,7 +1571,27 @@ export default function App() {
         />
       )}
 
-      {!['HOME', 'CRM', 'BRAIN', 'JOURNAL', 'HEALTH'].includes(activeTab) && (
+      {activeTab === 'FINANCE' && (
+        <FinanceTab
+          financeSummary={financeSummary} financeSummaryLoading={financeSummaryLoading}
+          financeMigrated={financeMigrated}
+          financeSubscriptions={financeSubscriptions} financeTransactions={financeTransactions}
+          addFinanceAccount={addFinanceAccount} updateFinanceAccount={updateFinanceAccount}
+          deleteFinanceAccount={deleteFinanceAccount}
+          financeAddAccountOpen={financeAddAccountOpen} setFinanceAddAccountOpen={setFinanceAddAccountOpen}
+          addFinanceSubscription={addFinanceSubscription} deleteFinanceSubscription={deleteFinanceSubscription}
+          financeAddSubOpen={financeAddSubOpen} setFinanceAddSubOpen={setFinanceAddSubOpen}
+          parseFinanceCsv={parseFinanceCsv} financeCsvPreview={financeCsvPreview} financeCsvParsing={financeCsvParsing}
+          cancelFinanceCsvPreview={cancelFinanceCsvPreview} commitFinanceCsv={commitFinanceCsv}
+          financeCsvAccountId={financeCsvAccountId} setFinanceCsvAccountId={setFinanceCsvAccountId}
+          financeCsvCommitting={financeCsvCommitting}
+          financeInsightText={financeInsightText} financeInsightGenerating={financeInsightGenerating}
+          generateFinanceInsight={generateFinanceInsight}
+          financeInsightDays={financeInsightDays} setFinanceInsightDays={setFinanceInsightDays}
+        />
+      )}
+
+      {!['HOME', 'CRM', 'BRAIN', 'JOURNAL', 'HEALTH', 'FINANCE'].includes(activeTab) && (
         <div style={css('flex:1;display:flex;align-items:center;justify-content:center;color:oklch(0.5 0.025 228);font-size:13px;')}>
           This tab is coming soon.
         </div>

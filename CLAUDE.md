@@ -68,6 +68,151 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## FINANCE tab built: accounts, subscriptions, CSV transaction import, AI insight (2026-09-01)
+Elo, unprompted, framed this as the highest-stakes feature in the whole app:
+"this is very, very important to me because I think it's gonna be the most
+direct effect of my life financially." Wants everything centralized --
+checking/savings/HYSA/investment/retirement accounts, credit card debt,
+subscriptions, spend/budget -- plus AI insight on income/spend trends and
+what's cuttable.
+
+**Real live bank sync was ruled out, not just deprioritized.** Elo initially
+assumed a "Google Sheets bank sync via account/card number" was achievable
+for free -- it isn't: live balance/transaction sync from a real bank requires
+going through an aggregator (Plaid being the standard one), and typing an
+account/card number directly into a spreadsheet formula doesn't talk to a
+bank at all. Checked Plaid's actual current pricing via WebFetch rather than
+asserting from memory -- confirmed a real free development tier exists but
+production use is metered per connected account, so "free forever" isn't a
+promise safe to make. Told Elo this directly rather than build toward a
+premise that doesn't hold. Live investment-price lookup (`GOOGLEFINANCE`-
+style, ticker+shares) IS genuinely free and real (stock prices are public
+data, unlike private bank balances) -- Elo's own research surfaced this
+correctly -- but he explicitly deferred it: "we will figure the live part
+later on, let's do csv export." **What got built instead:** balances entered
+directly (same "manual entry now, live later" pattern this app already used
+for `profile`/`habit_streak` before those had real integrations), and
+transaction HISTORY via CSV import -- Elo downloads his own bank/card export,
+uploads it here, nothing ever touches his real bank credentials, $0 cost,
+matching a hard constraint he stated directly: "I honestly don't want to
+spend any money at all with this one while still having a live update."
+
+**Schema** (3 new tables, migration below) -- `finance_accounts` (balance,
+type, `is_debt`, `sort_order`), `finance_transactions` (`account_id`,
+`txn_date`, `description`, `amount` -- signed, negative = spend), 
+`finance_subscriptions` (`amount`, `billing_cycle`, `is_active`). No CHECK
+constraint on `type`/`billing_cycle` -- free text, matching this app's
+existing convention for category-style columns (habits.category is the same
+pattern) rather than a rigid enum that would need its own migration to
+extend later.
+
+**CSV import, `server.js`:** bank exports vary wildly (one signed amount
+column vs. separate debit/credit columns, different date formats, extra
+columns like a running balance) -- rather than hardcode one bank's layout,
+`POST /api/finance/transactions/parse-csv` uses `csv-parse/sync` to
+robustly split real CSV (handles quoted fields with embedded commas, unlike
+a naive `.split(',')`), then sends the header + 5 sample rows to Claude via
+`askClaudeStructured()` with a `ColumnMapSchema` (Zod) to identify which
+columns are date/description/amount -- reusing the exact same "let Claude
+read messy real-world structure" pattern already used for bank-agnostic
+task/journal extraction elsewhere in this app. Returns a PREVIEW only,
+nothing saved -- same review-before-create principle as CRM's AI ADD.
+`POST /api/finance/transactions/commit` is the explicit second step that
+actually inserts, once Elo's picked which real account the statement
+belongs to (the parse step has no way to know that).
+
+**AI insight, `POST /api/finance/insight`:** Sonnet (shared default, no
+override) -- judging what's a real spending pattern worth flagging vs. noise
+is exactly the kind of call worth the better tier, same reasoning already
+applied to the HEALTH/JOURNAL insight generators. Prompt explicitly states
+"this is spending-pattern feedback only, never investment or financial
+advice" and instructs against inventing a pattern that isn't actually in the
+data -- same safety framing HEALTH's goals already use for a sensitive
+domain, applied here to money instead of the body.
+
+**Real bug found and fixed before this ever ran once:** `GET
+/api/finance/summary` and `POST /api/finance/insight` both called a
+`missingTable(error, tableName)` helper that was never defined at module
+scope -- would have crashed both routes with a `ReferenceError` the first
+time either was ever hit with a real error (including the everyday
+pre-migration 404 case). Caught immediately on the first local restart
+(`SyntaxError: Identifier 'missingTable' has already been declared` --
+turned out a helper with that exact name already existed, added earlier for
+the sleep routes) before any curl test, not discovered later. Fixed by
+reusing the existing shared helper instead of redeclaring it.
+
+**Frontend (`client/src/pages/FinanceTab.js`, new):** net worth/assets/
+debt/spend summary strip, accounts split into CASH & INVESTMENTS vs. CREDIT
+& DEBT (click a balance to edit it inline), subscriptions list with a
+monthly-equivalent total (yearly÷12, weekly×4.33), a CSV upload -> preview
+table -> account picker -> IMPORT flow (`FileReader.readAsText()`, matching
+this app's existing base64-file-handling convention but for text instead of
+images), an AI INSIGHT card with a 30/60/90/365-day range picker, and a
+recent-transactions list. Degrades gracefully pre-migration exactly like
+`sleep_log`/`health_goals` did before their own migrations ran -- a real
+404 from `/api/finance/summary` flips `financeMigrated` false and the tab
+shows a plain "run the migration" message instead of an empty or broken
+dashboard.
+
+**Verified before calling this done:** `CI=true npm run build` compiles
+clean (the exact command that's caught a real deploy-blocking issue once
+before in this app -- see the Railway build-failure note further down);
+restarted the backend and confirmed all 5 finance routes (accounts,
+subscriptions, transactions, summary, insight) return a clean 404 with
+`{error: "... table does not exist yet"}` pre-migration, not a raw 400 or a
+crash; loaded the real FINANCE tab in a browser pre-migration and confirmed
+it shows the "isn't set up yet" message with no unexpected console errors
+(only the same three expected pre-migration 404s, matching the pattern
+already documented for `profile`/`health_goals`). **Not yet verified**: the
+actual CSV parse/preview/commit round-trip, account/subscription CRUD, and
+the AI insight generator all need the migration to actually run first --
+that's next, once Elo runs the SQL below.
+
+Migration (Supabase SQL editor):
+```sql
+CREATE TABLE finance_accounts (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  institution TEXT,
+  current_balance NUMERIC(12,2) DEFAULT 0,
+  credit_limit NUMERIC(12,2),
+  is_debt BOOLEAN DEFAULT FALSE,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+ALTER TABLE finance_accounts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable all for public" ON finance_accounts FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE finance_transactions (
+  id SERIAL PRIMARY KEY,
+  account_id INTEGER REFERENCES finance_accounts(id) ON DELETE CASCADE,
+  txn_date DATE NOT NULL,
+  description TEXT NOT NULL,
+  amount NUMERIC(12,2) NOT NULL,
+  category TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+ALTER TABLE finance_transactions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable all for public" ON finance_transactions FOR ALL USING (true) WITH CHECK (true);
+
+CREATE TABLE finance_subscriptions (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  amount NUMERIC(10,2) NOT NULL,
+  billing_cycle TEXT NOT NULL DEFAULT 'monthly',
+  next_renewal_date DATE,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+ALTER TABLE finance_subscriptions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable all for public" ON finance_subscriptions FOR ALL USING (true) WITH CHECK (true);
+```
+**Still needs Elo:** run the migration above in Supabase's SQL editor --
+nothing else changes until then, the tab already degrades cleanly in the
+meantime.
+
 ## Calendar upgraded from write-through to a real daily sync with deletion handling (2026-08-31)
 Same day as the write-through version above, Elo pushed back: "why can't we
 make it better by having the memory of the entire google calendar." Fair
@@ -3328,17 +3473,17 @@ from.
    run with `CI=true` -- that's the one env var that changes whether ESLint
    warnings are cosmetic or fatal, and it's exactly the difference between
    this machine and every real deploy host.
-9. **Finance** (last, deliberately — most complex, most sensitive data) — live data from
-   multiple financial/investment accounts, feeding both the existing (currently
-   hardcoded) Finance Pulse widget on HOME and a full Finance tab that doesn't exist yet.
-   By this point the OAuth/token-storage pattern will already exist once (Calendar), and
-   the event-log pattern for historical data will already exist twice (habits, tasks) —
-   transactions are inherently a log, so this reuses proven patterns instead of
-   inventing its own. Also, correctly, lands on the most mature version of the security
-   foundation, which matters a lot once real financial data is involved. If the fake
-   Finance Pulse numbers are annoying before the real integration lands, a cheap
-   manual-entry stopgap (same spirit as how `profile`/`habit_streak` started as
-   localStorage stopgaps) is a reasonable aside, not a sequencing change.
+9. **Finance** — moved up out of its original last-in-sequence slot at Elo's explicit
+   request ("I am ready for the finance tab"), same as HEALTH (step 10) was earlier.
+   Built and code-verified 2026-09-01, migration not yet run by Elo — see the dated
+   "FINANCE tab built" section above for the full writeup. Landed on CSV import for
+   transaction history + manual account-balance entry, not live bank sync (real bank
+   aggregation needs a paid service like Plaid at production volume, contradicting
+   Elo's explicit "I don't want to spend any money on this one" constraint) — live
+   investment-price lookup (a genuinely free public-data API) is a real, deliberately
+   deferred follow-up, not ruled out. HOME's Finance Pulse widget is still hardcoded
+   mock data, untouched by this pass — wiring it to the new real `finance_accounts`
+   data is a natural next step but wasn't asked for yet.
 10. ~~Build out the HEALTH tab~~ — done and tested 2026-08-25 (see "What's real vs.
     still mock" above for the full writeup). Done out of its original sequencing
     (before Finance/deployment) at Elo's explicit request, while the Oracle Cloud
