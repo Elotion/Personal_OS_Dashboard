@@ -125,7 +125,12 @@ not noise:
   schedule at all; a `setTimeout` fired ~90 minutes after a real
   `end_sleep` execution (matching his stated routine length), checking for
   tasks in `timeframe: 'THIS WEEK'` with `created_at` older than 7 days.
-  Silent if none exist.
+  **Extended same day** to also flag `THIS MONTH` tasks, at a longer
+  21-day threshold (3 weeks) -- a month-scoped task has more natural
+  runway, and flagging it right at the ~30-day mark would just catch it
+  as it's already about to expire rather than while there's still real
+  time to act. Grouped into two labeled sections in one message when both
+  fire together. Silent if none exist in either category.
 - **Evening check-in, 9pm daily** (cron) -- open habits, no journal entry
   yet today (via `getEffectiveDate()`, consistent with the rest of the
   day-boundary system), or unfinished starred tasks. Silent if all three
