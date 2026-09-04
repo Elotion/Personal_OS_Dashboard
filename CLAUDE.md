@@ -126,6 +126,48 @@ pass on HOME confirmed HABITS reads `4/6 · 67%` with the correct four
 habits checked and NUTRITION shows all 3 real meals -- both matching hand-
 checked reality -- with zero new console errors.
 
+## FINANCE tab follow-ups: real balances entered, drag-reorder + full edit, layout match with HEALTH (2026-09-04)
+Three small follow-ups to the FINANCE tab build, same day as the day-
+boundary bug fix above.
+
+**Real balances entered.** Elo asked for his real accounts to be added
+rather than sent as full bank statements (statements carry account
+numbers/PII that don't need to touch this conversation, when the tab only
+ever stores name/type/institution/balance) -- he listed 5 real accounts in
+plain text, added via direct API calls: Chase Checking ($218.19), Amex
+High-Yield Savings ($845.41), Charles Schwab Roth IRA ($1,792.63), Charles
+Schwab Brokerage ($8,838.12), Fidelity Roth IRA ($8,030.34) -- real net
+worth $19,724.69, no debt accounts yet. Verified via a fresh
+`GET /api/finance/summary` and a live browser load, both matching exactly.
+
+**Drag-to-reorder + full field editing on accounts.** Elo: "I should be
+able to change the order... drag them around and perhaps even edit the
+different cash and investment, and the amount." `AccountRow`
+(`client/src/pages/FinanceTab.js`) gained a drag handle (⠿) using the exact
+same splice-and-reindex-then-PUT-every-item pattern as `reorderHabits`
+(`reorderFinanceAccounts` in `App.js`, operating on the shared `sort_order`
+column -- no migration needed, that column already existed), plus a pencil
+(✎) opening a full `AccountEditForm` (name/type/institution/is_debt),
+separate from the pre-existing quick click-the-balance-to-edit. No backend
+changes needed -- `PUT /api/finance/accounts/:id` already merged whatever
+fields were sent. **Could not mechanically test the actual drag gesture**
+-- same standing limitation as the habit sub-task drag work (this session's
+browser automation can't dispatch trusted native HTML5 drag events) --
+verified the mechanism instead by directly PUTting `sort_order` for every
+account in a new order and confirming `GET` returned them in exactly that
+order, then restored the original order. Verified the edit-form round trip
+for real in the browser: opened it, changed nothing, hit SAVE, confirmed
+via a fresh `GET` that every field was still byte-identical (no
+corruption); separately confirmed CANCEL leaves the record untouched.
+
+**AI INSIGHT moved above FINANCE OVERVIEW.** Elo: "move the ai insight box
+above financial overview box like for the health section" -- straight
+JSX reorder in `FinanceTab.js`, no logic change, matching the same
+layout decision already made for HEALTH (see that tab's own history
+further down: the page should lead with the thing that actually changes,
+not a static summary strip). Verified live -- AI INSIGHT renders first,
+FINANCE OVERVIEW second, no console errors.
+
 ## FINANCE tab built: accounts, subscriptions, CSV transaction import, AI insight (2026-09-01)
 Elo, unprompted, framed this as the highest-stakes feature in the whole app:
 "this is very, very important to me because I think it's gonna be the most

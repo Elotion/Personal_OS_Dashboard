@@ -336,24 +336,9 @@ export default function FinanceTab({
   return (
     <div className="elo-scroll" style={css('flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding-right:6px;')}>
 
-      {/* NET WORTH summary strip */}
-      <div className={CARD_CLASS} style={css(CARD + 'padding:20px 22px;')}>
-        <div style={css('font-size:9.5px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);margin-bottom:14px;')}>FINANCE OVERVIEW</div>
-        {financeSummaryLoading && !financeSummary ? (
-          <div style={css('color:oklch(0.5 0.025 228);font-size:12px;')}>Loading…</div>
-        ) : (
-          <div style={css('display:flex;flex-wrap:wrap;gap:22px;')}>
-            <StatBlock label="NET WORTH" value={fmtMoney(financeSummary?.net_worth)} color={GOLD} />
-            <StatBlock label="ASSETS" value={fmtMoney(financeSummary?.total_assets)} color="oklch(0.7 0.18 150)" />
-            <StatBlock label="DEBT OWED" value={fmtMoney(financeSummary?.total_debts)} color="oklch(0.68 0.19 25)" />
-            <StatBlock label="THIS MONTH SPEND" value={fmtMoney(financeSummary?.month_spend)} />
-            <StatBlock label="THIS MONTH INCOME" value={fmtMoney(financeSummary?.month_income)} />
-            <StatBlock label="SUBSCRIPTIONS / MO" value={fmtMoney(monthlySubTotal)} />
-          </div>
-        )}
-      </div>
-
-      {/* AI INSIGHT */}
+      {/* AI INSIGHT -- above FINANCE OVERVIEW (2026-09-04, matching HEALTH's
+          same layout: the page leads with the thing that actually changes,
+          not a static summary strip). */}
       <div className={CARD_CLASS} style={css(CARD + 'padding:16px;display:flex;flex-direction:column;gap:10px;')}>
         <div style={css('display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;')}>
           <div style={css('font-size:10px;font-weight:700;letter-spacing:0.08em;color:oklch(0.86 0.17 195);')}>⭐ AI INSIGHT</div>
@@ -369,6 +354,23 @@ export default function FinanceTab({
         <div style={css('font-size:13.5px;line-height:1.55;color:oklch(0.7 0.025 228);')}>
           {financeInsightText || 'No insight yet — hit GENERATE to have AI look for real spending patterns in your imported transactions. Spending feedback only, never investment advice.'}
         </div>
+      </div>
+
+      {/* NET WORTH summary strip */}
+      <div className={CARD_CLASS} style={css(CARD + 'padding:20px 22px;')}>
+        <div style={css('font-size:9.5px;font-weight:700;letter-spacing:0.08em;color:oklch(0.5 0.025 228);margin-bottom:14px;')}>FINANCE OVERVIEW</div>
+        {financeSummaryLoading && !financeSummary ? (
+          <div style={css('color:oklch(0.5 0.025 228);font-size:12px;')}>Loading…</div>
+        ) : (
+          <div style={css('display:flex;flex-wrap:wrap;gap:22px;')}>
+            <StatBlock label="NET WORTH" value={fmtMoney(financeSummary?.net_worth)} color={GOLD} />
+            <StatBlock label="ASSETS" value={fmtMoney(financeSummary?.total_assets)} color="oklch(0.7 0.18 150)" />
+            <StatBlock label="DEBT OWED" value={fmtMoney(financeSummary?.total_debts)} color="oklch(0.68 0.19 25)" />
+            <StatBlock label="THIS MONTH SPEND" value={fmtMoney(financeSummary?.month_spend)} />
+            <StatBlock label="THIS MONTH INCOME" value={fmtMoney(financeSummary?.month_income)} />
+            <StatBlock label="SUBSCRIPTIONS / MO" value={fmtMoney(monthlySubTotal)} />
+          </div>
+        )}
       </div>
 
       {/* ACCOUNTS */}
