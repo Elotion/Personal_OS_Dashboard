@@ -457,7 +457,7 @@ export default function HomeTab(props) {
                     <div style={css('font-size:28px;font-weight:700;letter-spacing:-0.01em;margin-bottom:10px;')}>
                       ${Math.round(financeSummary.net_worth).toLocaleString()}
                     </div>
-                    {nwPaths ? (
+                    {nwPaths && (
                       <svg viewBox="0 0 260 84" preserveAspectRatio="none" style={css('width:100%;height:84px;display:block;margin-bottom:12px;filter:drop-shadow(0 0 5px oklch(0.86 0.17 195 / 0.4));')}>
                         <defs>
                           <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
@@ -468,18 +468,25 @@ export default function HomeTab(props) {
                         <path d={nwPaths.area} fill="url(#nwFill)" stroke="none" />
                         <path d={nwPaths.line} fill="none" stroke="oklch(0.86 0.17 195)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
-                    ) : (
-                      <div style={css('font-size:10.5px;color:oklch(0.5 0.025 228);padding:10px 0;')}>
-                        Trend line builds as your logged balances accumulate history.
-                      </div>
                     )}
-                    <div style={css('background:oklch(0.12 0.06 240);border-radius:8px;padding:10px 12px;box-shadow:' + GLOW_MED + ';')}>
-                      <div style={css('font-size:9px;color:oklch(0.5 0.025 228);letter-spacing:0.06em;margin-bottom:3px;')}>30-DAY CHANGE</div>
-                      {change != null ? (
-                        <div style={css('font-size:14px;font-weight:700;color:' + changeColor + ';')}>{fmtSignedMoney(change)}</div>
-                      ) : (
-                        <div style={css('font-size:11.5px;color:oklch(0.5 0.025 228);')}>No month-old data yet</div>
-                      )}
+                    <div style={css('display:flex;gap:10px;')}>
+                      {/* DAILY has no real data source -- Elo doesn't update
+                          balances daily, so this stays a plain "--"
+                          placeholder indefinitely, never a fabricated
+                          number, unless a real daily-tracked figure gets
+                          added later. */}
+                      <div style={css('flex:1;background:oklch(0.12 0.06 240);border-radius:8px;padding:10px 12px;box-shadow:' + GLOW_MED + ';')}>
+                        <div style={css('font-size:9px;color:oklch(0.5 0.025 228);letter-spacing:0.06em;margin-bottom:3px;')}>DAILY</div>
+                        <div style={css('font-size:14px;font-weight:700;color:oklch(0.5 0.025 228);')}>--</div>
+                      </div>
+                      <div style={css('flex:1;background:oklch(0.12 0.06 240);border-radius:8px;padding:10px 12px;box-shadow:' + GLOW_MED + ';')}>
+                        <div style={css('font-size:9px;color:oklch(0.5 0.025 228);letter-spacing:0.06em;margin-bottom:3px;')}>MONTHLY</div>
+                        {change != null ? (
+                          <div style={css('font-size:14px;font-weight:700;color:' + changeColor + ';')}>{fmtSignedMoney(change)}</div>
+                        ) : (
+                          <div style={css('font-size:14px;font-weight:700;color:oklch(0.5 0.025 228);')}>--</div>
+                        )}
+                      </div>
                     </div>
                   </>
                 );

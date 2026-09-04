@@ -117,10 +117,26 @@ Verified live: real net worth (`$19,725`, rounded) renders correctly on
 HOME pre-migration, with the honest "trend line builds..." and "No
 month-old data yet" placeholders showing instead of any fabricated number,
 matching a fresh `GET /api/finance/summary` exactly (`net_worth_change_30d:
-null`, `net_worth_history: []`). No console errors. **Still needs Elo:**
-run the migration below -- net worth already updates live either way, this
-only unlocks the trend line + 30-day change once ~a month of daily-logged
-history accumulates.
+null`, `net_worth_history: []`). No console errors.
+
+**Migration run same day, then two follow-up refinements from Elo after
+seeing it live:**
+1. Confirmed the migration landed -- `GET /api/finance/summary` immediately
+   started returning a real logged row (`net_worth_history:
+   [{date: "2026-09-04", net_worth: 19724.69}]`), with `net_worth_change_30d`
+   still correctly `null` (only one day of history exists so far, nothing
+   30 days back yet to diff against -- expected, not a bug).
+2. Elo asked for a plainer placeholder: "put the day change % in like
+   '--', and monthly change '--' for now" -- reverted the single "30-DAY
+   CHANGE" box back to the original two-box DAILY/MONTHLY layout, but with
+   honest `--` placeholders instead of sentence-style notes. DAILY has no
+   real data source at all (Elo doesn't update balances daily, by design)
+   so it now renders a permanent `--` -- not wired to anything, unlike
+   MONTHLY which shows the real `net_worth_change_30d` figure the moment
+   it exists and falls back to `--` until then. The "trend line builds..."
+   text note was dropped too, in the same spirit -- the chart now either
+   renders for real (2+ logged days) or renders nothing at all, no
+   placeholder sentence.
 
 ```sql
 CREATE TABLE finance_networth_log (
