@@ -936,6 +936,15 @@ export default function App() {
   // Macros are AI-estimated from the freeform text (POST /api/nutrition/estimate,
   // via Claude) before the entry is saved -- previously this silently saved the
   // same hardcoded 250/12/20/8 for every meal regardless of what was typed.
+  // Re-fetches nutrition against whatever "today" the server now considers
+  // effective -- called after any bedtime action that can move that
+  // boundary (2026-09-04), same reasoning as refreshEffectiveHabitDate:
+  // without this, NUTRITION would keep showing the just-ended day's meals
+  // (or hide a real midnight-snack entry that now belongs to the still-open
+  // day) until the next full page reload.
+  const loadNutrition = () => {
+    apiGet('/api/nutrition').then((rows) => setFoodLog(rows.map(transformNutrition))).catch((e) => console.error(e));
+  };
   const addFood = () => {
     const text = foodInput.trim();
     if (!text || foodEstimating) return;
@@ -964,6 +973,7 @@ export default function App() {
         // bedtime-aware habit/journal day (lib/habitDay.js) -- refresh so
         // the UI picks up the new boundary immediately, not on next reload.
         refreshEffectiveHabitDate();
+        loadNutrition();
       })
       .catch((e) => console.error(e));
   };
@@ -977,6 +987,7 @@ export default function App() {
       .then(() => {
         setSleepPending(null);
         refreshEffectiveHabitDate();
+        loadNutrition();
       })
       .catch((e) => console.error(e));
   };
@@ -992,6 +1003,7 @@ export default function App() {
         setSleepQualityInput(0);
         loadHealthData(healthRangeDays);
         refreshEffectiveHabitDate();
+        loadNutrition();
       })
       .catch((e) => console.error(e));
   };

@@ -620,12 +620,18 @@ app.delete('/api/goals/:id', (req, res) => {
 // `DEFAULT CURRENT_DATE`, which evaluates in the *database server's*
 // timezone (typically UTC on a hosted Postgres), not Elo's -- same bug,
 // write side. Both now use localDateStr() explicitly.
-app.get('/api/nutrition', (req, res) => {
-  const today = localDateStr(new Date());
-  handle(res, supabase.from('nutrition_log').select('*').eq('logged_date', req.query.date || today));
+// "Today" here is the bedtime-aware effective date (lib/habitDay.js), not
+// the plain calendar date -- added 2026-09-04 at Elo's request: a midnight
+// snack logged before he's gone to bed should still count toward the day
+// that, from his own perspective, hasn't ended yet, matching the exact rule
+// habits/journal already follow. An explicit ?date= query still overrides
+// this (used when browsing a specific past day, not "today").
+app.get('/api/nutrition', async (req, res) => {
+  const today = req.query.date || (await getEffectiveDate());
+  handle(res, supabase.from('nutrition_log').select('*').eq('logged_date', today));
 });
 
-app.post('/api/nutrition', (req, res) => {
+app.post('/api/nutrition', async (req, res) => {
   const { label, kcal, protein, carbs, fat, fiber, sugar, logged_date } = req.body;
   // created_at previously relied on the column's own DEFAULT NOW(), which
   // evaluates on the database server (UTC) into a timezone-naive column --
@@ -635,7 +641,7 @@ app.post('/api/nutrition', (req, res) => {
   const row = {
     label, kcal, protein, carbs, fat,
     fiber: fiber ?? null, sugar: sugar ?? null,
-    logged_date: logged_date || localDateStr(new Date()),
+    logged_date: logged_date || (await getEffectiveDate()),
     created_at: localTimestampStr(new Date()),
   };
   handle(res, supabase.from('nutrition_log').insert([row]).select());
