@@ -47,15 +47,20 @@ const PARTICLE_COLORS = [
   'oklch(0.8 0.19 200)', 'oklch(0.92 0.1 198)',
 ];
 
-const NET_WORTH_SERIES = [10420, 10680, 11050, 11380, 11720, 12080, 12460, 12780, 13020, 13240];
-
-function buildNetWorthPaths() {
-  const min = Math.min(...NET_WORTH_SERIES);
-  const max = Math.max(...NET_WORTH_SERIES);
+// Builds the FINANCE PULSE sparkline from REAL logged net-worth history
+// (finance_networth_log, one row per calendar day -- see GET
+// /api/finance/summary), not fabricated data. Needs at least 2 points to
+// draw a meaningful line -- returns null with fewer, so the caller can show
+// a "still building history" note instead of a flat or misleading line.
+function buildNetWorthPaths(history) {
+  if (!history || history.length < 2) return null;
+  const values = history.map((h) => Number(h.net_worth));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
   const cw = 260, ch = 84, padY = 6;
-  const pts = NET_WORTH_SERIES.map((v, i) => ({
-    x: (i / (NET_WORTH_SERIES.length - 1)) * cw,
-    y: padY + (1 - (v - min) / (max - min)) * (ch - padY * 2),
+  const pts = values.map((v, i) => ({
+    x: (i / (values.length - 1)) * cw,
+    y: padY + (max === min ? (ch - padY * 2) / 2 : (1 - (v - min) / (max - min)) * (ch - padY * 2)),
   }));
   let d = `M ${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -65,7 +70,10 @@ function buildNetWorthPaths() {
   }
   return { line: d, area: d + ` L ${cw},${ch} L 0,${ch} Z` };
 }
-const NW = buildNetWorthPaths();
+function fmtSignedMoney(n) {
+  const v = Math.round(n);
+  return (v >= 0 ? '+' : '-') + '$' + Math.abs(v).toLocaleString();
+}
 
 // Renders right after the GRID ROW its habit belongs to (grid-column:1/-1,
 // placed in DOM order inside the same grid) -- not below the whole grid,
@@ -173,7 +181,7 @@ export default function HomeTab(props) {
     now, greeting, dayLabel,
     profile, editingProfileField, editingProfileText, setEditingProfileText,
     startEditProfile, saveEditProfile, cancelEditProfile, updateProfilePhoto,
-    financeHidden, setFinanceHidden,
+    financeHidden, setFinanceHidden, financeSummary,
     keyTasks, toggleTask,
     captureText, setCaptureText, submitCapture,
     habits, toggleHabit, todayStr, habitBurst, streakCount, streakBurst,
@@ -418,7 +426,16 @@ export default function HomeTab(props) {
           </div>
         </div>
 
-        {/* FINANCE PULSE */}
+        {/* FINANCE PULSE -- real data as of 2026-09-04 (was mock). Elo:
+            balances only get updated roughly monthly, not daily, so there is
+            deliberately no "DAILY" figure here any more -- that would just be
+            fabricated noise. Net worth itself is always real (computed from
+            finance_accounts). The 30-day change and the trend line are both
+            genuinely optional -- they only render once real logged history
+            (finance_networth_log, one row per calendar day) actually spans
+            that far back; until then this shows an honest "still building
+            history" note instead of a made-up number or a misleading flat
+            line. */}
         <div className={CARD_CLASS} style={css(CARD + 'padding:18px;')}>
           <div
             className="elo-hover-pop"
@@ -428,30 +445,48 @@ export default function HomeTab(props) {
           <div style={css('filter:' + (financeHidden ? 'blur(9px)' : 'blur(0px)') + ';transition:filter 0.3s ease;user-select:' + (financeHidden ? 'none' : 'auto') + ';')}>
             <div style={css('display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-right:34px;')}>
               <div style={css('font-size:10px;font-weight:700;letter-spacing:0.1em;color:oklch(0.55 0.025 228);')}>FINANCE PULSE</div>
-              <div style={css('font-size:10px;font-weight:600;color:oklch(0.8 0.19 200);background:oklch(0.8 0.19 200 / 0.12);padding:3px 8px;border-radius:20px;')}>↑ 6.2% · 30D</div>
             </div>
-            <div style={css('font-size:10px;color:oklch(0.5 0.025 228);letter-spacing:0.06em;margin-bottom:4px;')}>NET WORTH</div>
-            <div style={css('font-size:28px;font-weight:700;letter-spacing:-0.01em;margin-bottom:10px;')}>$13,240</div>
-            <svg viewBox="0 0 260 84" preserveAspectRatio="none" style={css('width:100%;height:84px;display:block;margin-bottom:12px;filter:drop-shadow(0 0 5px oklch(0.86 0.17 195 / 0.4));')}>
-              <defs>
-                <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="oklch(0.86 0.17 195)" stopOpacity="0.35" />
-                  <stop offset="100%" stopColor="oklch(0.86 0.17 195)" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path d={NW.area} fill="url(#nwFill)" stroke="none" />
-              <path d={NW.line} fill="none" stroke="oklch(0.86 0.17 195)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <div style={css('display:flex;gap:10px;')}>
-              <div style={css('flex:1;background:oklch(0.12 0.06 240);border-radius:8px;padding:10px 12px;box-shadow:' + GLOW_MED + ';')}>
-                <div style={css('font-size:9px;color:oklch(0.5 0.025 228);letter-spacing:0.06em;margin-bottom:3px;')}>DAILY</div>
-                <div style={css('font-size:14px;font-weight:700;color:oklch(0.8 0.19 200);')}>+$32</div>
-              </div>
-              <div style={css('flex:1;background:oklch(0.12 0.06 240);border-radius:8px;padding:10px 12px;box-shadow:' + GLOW_MED + ';')}>
-                <div style={css('font-size:9px;color:oklch(0.5 0.025 228);letter-spacing:0.06em;margin-bottom:3px;')}>MONTHLY</div>
-                <div style={css('font-size:14px;font-weight:700;color:oklch(0.8 0.19 200);')}>+$960</div>
-              </div>
-            </div>
+            {financeSummary ? (
+              (() => {
+                const nwPaths = buildNetWorthPaths(financeSummary.net_worth_history);
+                const change = financeSummary.net_worth_change_30d;
+                const changeColor = change > 0 ? 'oklch(0.7 0.18 150)' : change < 0 ? 'oklch(0.68 0.19 25)' : 'oklch(0.6 0.025 228)';
+                return (
+                  <>
+                    <div style={css('font-size:10px;color:oklch(0.5 0.025 228);letter-spacing:0.06em;margin-bottom:4px;')}>NET WORTH</div>
+                    <div style={css('font-size:28px;font-weight:700;letter-spacing:-0.01em;margin-bottom:10px;')}>
+                      ${Math.round(financeSummary.net_worth).toLocaleString()}
+                    </div>
+                    {nwPaths ? (
+                      <svg viewBox="0 0 260 84" preserveAspectRatio="none" style={css('width:100%;height:84px;display:block;margin-bottom:12px;filter:drop-shadow(0 0 5px oklch(0.86 0.17 195 / 0.4));')}>
+                        <defs>
+                          <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="oklch(0.86 0.17 195)" stopOpacity="0.35" />
+                            <stop offset="100%" stopColor="oklch(0.86 0.17 195)" stopOpacity="0" />
+                          </linearGradient>
+                        </defs>
+                        <path d={nwPaths.area} fill="url(#nwFill)" stroke="none" />
+                        <path d={nwPaths.line} fill="none" stroke="oklch(0.86 0.17 195)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    ) : (
+                      <div style={css('font-size:10.5px;color:oklch(0.5 0.025 228);padding:10px 0;')}>
+                        Trend line builds as your logged balances accumulate history.
+                      </div>
+                    )}
+                    <div style={css('background:oklch(0.12 0.06 240);border-radius:8px;padding:10px 12px;box-shadow:' + GLOW_MED + ';')}>
+                      <div style={css('font-size:9px;color:oklch(0.5 0.025 228);letter-spacing:0.06em;margin-bottom:3px;')}>30-DAY CHANGE</div>
+                      {change != null ? (
+                        <div style={css('font-size:14px;font-weight:700;color:' + changeColor + ';')}>{fmtSignedMoney(change)}</div>
+                      ) : (
+                        <div style={css('font-size:11.5px;color:oklch(0.5 0.025 228);')}>No month-old data yet</div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()
+            ) : (
+              <div style={css('font-size:11.5px;color:oklch(0.5 0.025 228);padding:10px 0;')}>No accounts logged yet — set up FINANCE to see it here.</div>
+            )}
           </div>
         </div>
 

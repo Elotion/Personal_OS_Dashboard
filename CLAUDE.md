@@ -68,6 +68,71 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## HOME's FINANCE PULSE wired to real data, honest degradation instead of fake numbers (2026-09-04)
+Elo (voice, garbled but clear on intent): put real net worth into HOME's
+FINANCE PULSE widget (previously hardcoded mock data -- `$13,240`, a fake
+`↑6.2%·30D` badge, a fake `DAILY +$32` -- the exact same "mock stopgap"
+class as `profile`/`habit_streak` before those had real integrations,
+called out explicitly in the original roadmap as needing a real wire-up
+eventually). Explicit, deliberate constraints: **no daily change number** --
+"we're not changing the data every day, pushing the data every month," so a
+"DAILY" figure would just be fabricated noise, not a real signal; a
+**monthly change is fine, once real month-old data exists** -- "when I
+upload the new month of the account balances, then you can create the
+monthly [change]." Per-account breakdown and spending budgets explicitly
+deferred: "it will set that up later."
+
+**Design: log real net worth once per calendar day, diff against ~a month
+back, never fabricate a number when there isn't one yet.** New
+`finance_networth_log` table (`date` UNIQUE, `net_worth`) -- `GET
+/api/finance/summary` upserts today's row with the freshly computed net
+worth on every call (idempotent by date, so however many times the route
+is hit in a day just keeps overwriting today's own row with the latest
+true value, never creating duplicates -- no explicit "log this month"
+action needed from Elo at all, it happens automatically the moment he
+updates a balance and next loads the app). Response gained
+`net_worth_change_30d` (diff against the oldest snapshot that's at least
+25 days old, or `null` if none exists yet) and `net_worth_history` (up to
+90 days of `{date, net_worth}` rows, for the trend line). Degrades
+gracefully pre-migration exactly like every other optional table in this
+app -- net worth itself still works immediately (computed from
+`finance_accounts`, which already existed), only the change/history fields
+are `null`/`[]` until the new table exists.
+
+**Frontend (`client/src/pages/HomeTab.js`):** the old `NET_WORTH_SERIES`
+mock array and its sparkline builder are gone -- `buildNetWorthPaths` now
+takes real `financeSummary.net_worth_history` and returns `null` when
+there are fewer than 2 real points, which the widget reads as "show an
+honest 'trend line builds as your logged balances accumulate history' note
+instead of a chart," rather than drawing a fake or misleadingly flat line.
+The old two-box DAILY/MONTHLY row is now a single "30-DAY CHANGE" box --
+a real signed dollar figure (green up / red down, reusing the same color
+convention as FINANCE's own ASSETS/DEBT stats) once `net_worth_change_30d`
+exists, otherwise "No month-old data yet" instead of a placeholder number.
+`financeSummary` is now loaded unconditionally on initial app mount
+(`App.js`), not just when the FINANCE tab itself is opened, since HOME
+needs it on first paint too.
+
+Verified live: real net worth (`$19,725`, rounded) renders correctly on
+HOME pre-migration, with the honest "trend line builds..." and "No
+month-old data yet" placeholders showing instead of any fabricated number,
+matching a fresh `GET /api/finance/summary` exactly (`net_worth_change_30d:
+null`, `net_worth_history: []`). No console errors. **Still needs Elo:**
+run the migration below -- net worth already updates live either way, this
+only unlocks the trend line + 30-day change once ~a month of daily-logged
+history accumulates.
+
+```sql
+CREATE TABLE finance_networth_log (
+  id SERIAL PRIMARY KEY,
+  date DATE NOT NULL UNIQUE,
+  net_worth NUMERIC(14,2) NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+ALTER TABLE finance_networth_log ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Enable all for public" ON finance_networth_log FOR ALL USING (true) WITH CHECK (true);
+```
+
 ## Real bug: the bedtime-aware day boundary went stale a day after waking (2026-09-04)
 Elo hit this live, past midnight into Sep 4, hadn't gone to bed yet: HOME's
 habits had already reset (all unchecked) and NUTRITION was already

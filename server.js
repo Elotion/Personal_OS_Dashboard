@@ -1390,13 +1390,44 @@ app.get('/api/finance/summary', async (req, res) => {
     }
 
     const round2 = (n) => Math.round(n * 100) / 100;
+    const netWorth = round2(totalAssets - totalDebts);
+
+    // Real net-worth history, for HOME's FINANCE PULSE widget (2026-09-04).
+    // Elo: he only updates account balances roughly monthly, not daily, so a
+    // "daily change" figure would just be fabricated noise -- the fix is to
+    // log a real snapshot once per calendar day (an upsert keyed by date, so
+    // however many times this route is hit today just keeps overwriting
+    // today's own row with the latest true value, never creating duplicates)
+    // and only ever show a MONTHLY change once genuine month-old history
+    // exists to diff against -- never a number invented to fill the space.
+    // Degrades gracefully pre-migration like every other optional table in
+    // this app: history/change are simply omitted, net worth itself still
+    // works since it's computed from finance_accounts, which already exists.
+    let netWorthChange30d = null;
+    let netWorthHistory = [];
+    try {
+      const today = localDateStr(new Date());
+      await supabase.from('finance_networth_log').upsert([{ date: today, net_worth: netWorth }], { onConflict: 'date' });
+      const historyResult = await supabase.from('finance_networth_log').select('date, net_worth').order('date').limit(90);
+      if (!historyResult.error) {
+        netWorthHistory = historyResult.data;
+        const cutoff = localDateStr(new Date(new Date().setDate(new Date().getDate() - 25)));
+        const monthAgoRow = [...netWorthHistory].reverse().find((r) => r.date <= cutoff);
+        if (monthAgoRow) netWorthChange30d = round2(netWorth - Number(monthAgoRow.net_worth));
+      }
+    } catch (e) {
+      // finance_networth_log doesn't exist yet -- fine, just no history/change.
+    }
+
     res.json({
-      net_worth: round2(totalAssets - totalDebts),
+      net_worth: netWorth,
       total_assets: round2(totalAssets),
       total_debts: round2(totalDebts),
       month_spend: round2(monthSpend),
       month_income: round2(monthIncome),
       monthly_subscription_total: round2(monthlySubscriptionTotal),
+      net_worth_change_30d: netWorthChange30d,
+      net_worth_history: netWorthHistory,
       accounts,
     });
   } catch (error) {

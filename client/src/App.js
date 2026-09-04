@@ -334,6 +334,11 @@ export default function App() {
       .then((rows) => setFoodLog(rows.map(transformNutrition)))
       .catch((e) => console.error('nutrition load failed', e));
 
+    // Loaded unconditionally (not gated to the FINANCE tab like healthData
+    // is to HEALTH) since HOME's FINANCE PULSE widget needs real net worth
+    // on first paint too, not just when FINANCE itself is opened.
+    loadFinanceData();
+
     apiGet('/api/journal')
       .then((rows) => setJournalEntries(rows.map(transformJournal)))
       .catch((e) => console.error('journal load failed', e));
@@ -1525,7 +1530,7 @@ export default function App() {
           setEditingProfileText={setEditingProfileText}
           startEditProfile={startEditProfile} saveEditProfile={saveEditProfile} cancelEditProfile={cancelEditProfile}
           updateProfilePhoto={updateProfilePhoto}
-          financeHidden={financeHidden} setFinanceHidden={setFinanceHidden}
+          financeHidden={financeHidden} setFinanceHidden={setFinanceHidden} financeSummary={financeSummary}
           keyTasks={keyTasksDerived} toggleTask={toggleTask}
           captureText={captureText} setCaptureText={setCaptureText} submitCapture={submitCapture}
           habits={habitsWithDone} toggleHabit={toggleHabit} todayStr={todayStr}
