@@ -133,10 +133,25 @@ seeing it live:**
    real data source at all (Elo doesn't update balances daily, by design)
    so it now renders a permanent `--` -- not wired to anything, unlike
    MONTHLY which shows the real `net_worth_change_30d` figure the moment
-   it exists and falls back to `--` until then. The "trend line builds..."
-   text note was dropped too, in the same spirit -- the chart now either
-   renders for real (2+ logged days) or renders nothing at all, no
-   placeholder sentence.
+   it exists and falls back to `--` until then.
+3. Elo then asked to keep the chart itself always visible ("I am still
+   going to have it show the graph tho"), as an ALL-TIME curve (the
+   `/api/finance/summary` history query's `.limit(90)` raised to `.limit(3650)`
+   -- one row/day keeps this table tiny even across years, so this is a
+   sanity ceiling, not a real cap), same bezier-curve-plus-gradient-fill
+   visual format this chart has always used, no axis units. With only one
+   real day logged so far, an initial version drew that as a flat line,
+   which read as "no growth" -- a live follow-up correction landed before
+   that ever shipped: "the trend line starts at zero and jump up to my net
+   worth right now." `buildNetWorthPaths` (`HomeTab.js`) now prepends a
+   synthetic $0 origin point whenever there's only one real logged day, then
+   runs it through the exact same bezier-smoothing path-building code used
+   for real multi-point history (not a separate code path) -- so it reads
+   as a real rising curve from zero to today's true net worth, and the
+   moment a second real day gets logged, that synthetic point disappears
+   and the curve is 100% real data. Verified live: the chart renders
+   unblurred on HOME showing exactly that rise-from-zero shape ending at
+   the real $19,725, no console errors.
 
 ```sql
 CREATE TABLE finance_networth_log (

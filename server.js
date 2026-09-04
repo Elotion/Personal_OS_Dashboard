@@ -1408,7 +1408,12 @@ app.get('/api/finance/summary', async (req, res) => {
     try {
       const today = localDateStr(new Date());
       await supabase.from('finance_networth_log').upsert([{ date: today, net_worth: netWorth }], { onConflict: 'date' });
-      const historyResult = await supabase.from('finance_networth_log').select('date, net_worth').order('date').limit(90);
+      // All-time history, not a rolling window -- Elo wants the HOME graph
+      // to show the real full curve, not just a recent slice. One row per
+      // calendar day (see the upsert above) keeps this table small even
+      // across years, so a generous cap here is just a sanity ceiling, not
+      // an actual limit on how much real history shows.
+      const historyResult = await supabase.from('finance_networth_log').select('date, net_worth').order('date').limit(3650);
       if (!historyResult.error) {
         netWorthHistory = historyResult.data;
         const cutoff = localDateStr(new Date(new Date().setDate(new Date().getDate() - 25)));

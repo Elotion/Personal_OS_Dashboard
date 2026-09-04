@@ -49,12 +49,16 @@ const PARTICLE_COLORS = [
 
 // Builds the FINANCE PULSE sparkline from REAL logged net-worth history
 // (finance_networth_log, one row per calendar day -- see GET
-// /api/finance/summary), not fabricated data. Needs at least 2 points to
-// draw a meaningful line -- returns null with fewer, so the caller can show
-// a "still building history" note instead of a flat or misleading line.
+// /api/finance/summary), all-time, not a recent window -- Elo wants the
+// real full curve always visible, same visual format this chart has always
+// used (bezier line + gradient fill, no axis units). With only one real
+// day logged so far, a flat line reads as "no growth" which isn't
+// meaningful yet -- Elo asked for it to start at $0 and rise to today's
+// real net worth instead, same bezier curve technique as the real
+// multi-point case below, just with a synthetic $0 origin point prepended.
 function buildNetWorthPaths(history) {
-  if (!history || history.length < 2) return null;
-  const values = history.map((h) => Number(h.net_worth));
+  if (!history || history.length === 0) return null;
+  const values = history.length === 1 ? [0, Number(history[0].net_worth)] : history.map((h) => Number(h.net_worth));
   const min = Math.min(...values);
   const max = Math.max(...values);
   const cw = 260, ch = 84, padY = 6;
