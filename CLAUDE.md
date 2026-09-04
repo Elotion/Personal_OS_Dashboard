@@ -68,6 +68,64 @@ If Elo asks for an actual purge later, that's a real destructive action (irrever
 deletes across `habit_completions`, `tasks`, `nutrition_log`, etc.) and needs his
 explicit go-ahead at that time, not an assumption that this note already covers it.
 
+## Real bug: the bedtime-aware day boundary went stale a day after waking (2026-09-04)
+Elo hit this live, past midnight into Sep 4, hadn't gone to bed yet: HOME's
+habits had already reset (all unchecked) and NUTRITION was already
+filtering to Sep 4, even though nothing he'd done that day (Sep 3) should
+have rolled over yet -- exactly the bug the 2026-08-27 day-boundary feature
+was built to prevent, now recurring.
+
+**Root cause:** `getEffectiveDate()` (`lib/habitDay.js`) anchored on the
+most recent bedtime EVER recorded, pending or already-completed, and
+computed `min(realToday, thatBedtime + 1 day)`. That formula only holds
+correctly for the ONE midnight immediately following that bedtime -- once
+Elo wakes up and lives through a full day, the same historical bedtime
+becomes stale, but `+1 day` from it naturally lands exactly on the NEXT
+literal midnight regardless of whether a fresh "went to bed" click ever
+happened, silently ending the deferral. Real numbers: last real bed_time
+was `2026-09-03 00:29` (already woken from) -- `+1 day` = `2026-09-04`,
+which is exactly today's real date the instant midnight into the 4th
+arrives, so the old code read that as "he already went to bed, ordinary
+reset applies" when the truth was "he hasn't gone to bed since waking,
+this is exactly the deferred case." Every prior verification of this
+feature (2026-08-27/28, 2026-08-31) only ever tested the same-night /
+next-midnight window, never a full day-plus stretch afterward, which is
+why this went uncaught for over a week of real use.
+
+**Fix:** anchor on the most recent WAKE-UP instead of the most recent
+bedtime, whenever no bedtime is currently pending -- pinned at that wake's
+date through any number of subsequent real midnights, until a fresh
+bedtime click starts a new pending night (which re-engages the original
+`min(realToday, bedDate+1)` formula, unchanged). Matches Elo's original
+rule literally -- "stays on the previous day until went to bed is
+clicked" has no implicit expiration.
+
+**Extended the same effective date to nutrition** (`GET`/`POST
+/api/nutrition`, and the Telegram bot's `log_food` tool in `lib/tools.js`)
+-- previously nutrition used the plain literal calendar date, unrelated to
+the habit/journal boundary at all. Elo: a midnight snack before he's gone
+to bed should count toward the day that, from his perspective, hasn't
+ended yet, same reasoning as habits/journal. `client/src/App.js` also
+gained a `loadNutrition()` re-fetch wired into `goToBed`/`cancelBedtime`/
+`wakeUp`, mirroring the existing `refreshEffectiveHabitDate()` calls there
+-- without it, NUTRITION would keep showing the just-ended day's meals (or
+hide a genuine post-bedtime-click entry) until a full page reload.
+
+**No data was ever lost or miscomputed server-side** -- this was purely a
+read-time "which day is today" bug. The moment the fix landed, Elo's real
+Sep 3 completions (Morning Routine, Learning Session, Creative Session,
+Deep Work) and all 3 real logged meals (3,690 kcal) reappeared exactly as
+they'd actually been recorded, with zero data changes needed.
+
+**Verified directly against real production data, not synthetic:**
+restarted the backend and confirmed `GET /api/today` flipped from the
+wrong `2026-09-04` back to the correct `2026-09-03`; confirmed `GET
+/api/habits` and `GET /api/nutrition` both reflected the real underlying
+completions/meals immediately, no data migration needed; full live-browser
+pass on HOME confirmed HABITS reads `4/6 · 67%` with the correct four
+habits checked and NUTRITION shows all 3 real meals -- both matching hand-
+checked reality -- with zero new console errors.
+
 ## FINANCE tab built: accounts, subscriptions, CSV transaction import, AI insight (2026-09-01)
 Elo, unprompted, framed this as the highest-stakes feature in the whole app:
 "this is very, very important to me because I think it's gonna be the most
