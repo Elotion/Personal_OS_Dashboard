@@ -569,6 +569,7 @@ export default function App() {
   const [financeCsvParsing, setFinanceCsvParsing] = useState(false);
   const [financeCsvAccountId, setFinanceCsvAccountId] = useState('');
   const [financeCsvCommitting, setFinanceCsvCommitting] = useState(false);
+  const [draggingFinanceAccountId, setDraggingFinanceAccountId] = useState(null);
 
   const selectedEntityIdRef = useRef(selectedEntityId);
   selectedEntityIdRef.current = selectedEntityId;
@@ -1086,6 +1087,31 @@ export default function App() {
     setFinanceSummary((s) => s && { ...s, accounts: s.accounts.filter((a) => a.id !== id) });
     fetch('/api/finance/accounts/' + id, { method: 'DELETE' }).then(() => loadFinanceData()).catch((e) => console.error(e));
   };
+  // Same splice-and-reindex-then-PUT-every-item approach as reorderHabits.
+  // Operates on the single combined accounts array (sort_order is one global
+  // column, not per cash-vs-debt list) -- dragging within one visually
+  // filtered group (assets or debts) only ever drops onto another item from
+  // that same group, and splicing the full array still preserves the
+  // relative order of every other item, including the untouched group, so
+  // this produces the right order in both filtered views at once.
+  const reorderFinanceAccounts = (draggedId, targetId) => {
+    if (draggedId === targetId) return;
+    setFinanceSummary((s) => {
+      if (!s) return s;
+      const prev = s.accounts;
+      const fromIdx = prev.findIndex((a) => a.id === draggedId);
+      const toIdx = prev.findIndex((a) => a.id === targetId);
+      if (fromIdx === -1 || toIdx === -1) return s;
+      const list = [...prev];
+      const [moved] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, moved);
+      const reordered = list.map((a, i) => ({ ...a, sort_order: i }));
+      reordered.forEach((a) => {
+        apiSend('/api/finance/accounts/' + a.id, 'PUT', { sort_order: a.sort_order }).catch((e) => console.error(e));
+      });
+      return { ...s, accounts: reordered };
+    });
+  };
 
   const addFinanceSubscription = (sub) => {
     apiSend('/api/finance/subscriptions', 'POST', sub)
@@ -1577,7 +1603,8 @@ export default function App() {
           financeMigrated={financeMigrated}
           financeSubscriptions={financeSubscriptions} financeTransactions={financeTransactions}
           addFinanceAccount={addFinanceAccount} updateFinanceAccount={updateFinanceAccount}
-          deleteFinanceAccount={deleteFinanceAccount}
+          deleteFinanceAccount={deleteFinanceAccount} reorderFinanceAccounts={reorderFinanceAccounts}
+          draggingFinanceAccountId={draggingFinanceAccountId} setDraggingFinanceAccountId={setDraggingFinanceAccountId}
           financeAddAccountOpen={financeAddAccountOpen} setFinanceAddAccountOpen={setFinanceAddAccountOpen}
           addFinanceSubscription={addFinanceSubscription} deleteFinanceSubscription={deleteFinanceSubscription}
           financeAddSubOpen={financeAddSubOpen} setFinanceAddSubOpen={setFinanceAddSubOpen}

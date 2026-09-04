@@ -62,38 +62,99 @@ function RangePicker({ value, onChange }) {
   );
 }
 
-function AccountRow({ account, onUpdate, onDelete }) {
-  const [editing, setEditing] = useState(false);
-  const [balanceInput, setBalanceInput] = useState(String(account.current_balance ?? 0));
+// Full field editor (name/type/institution) -- separate from the quick
+// balance-click-to-edit below, since that one's meant for the frequent
+// "update my balance" action and this one's for the rarer "fix a typo in
+// the name" / "recategorize this account" action.
+function AccountEditForm({ account, onSave, onCancel }) {
+  const [name, setName] = useState(account.name);
+  const [type, setType] = useState(account.type);
+  const [institution, setInstitution] = useState(account.institution || '');
+  const [isDebt, setIsDebt] = useState(!!account.is_debt);
   const save = () => {
-    const n = parseFloat(balanceInput);
-    if (!isNaN(n)) onUpdate(account.id, { current_balance: n });
-    setEditing(false);
+    if (!name.trim()) return;
+    onSave({ name: name.trim(), type, institution: institution.trim() || null, is_debt: isDebt });
   };
   return (
-    <div style={css('display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid oklch(0.28 0.06 232);')}>
+    <div style={css('display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:8px;background:oklch(0.11 0.05 236);border:1px solid oklch(0.28 0.06 232);margin-bottom:2px;')}>
+      <div style={css('display:flex;gap:8px;flex-wrap:wrap;')}>
+        <input value={name} onChange={(e) => setName(e.target.value)}
+          style={css('flex:2;min-width:120px;background:oklch(0.1 0.05 236);border:1px solid oklch(0.3 0.06 232);border-radius:6px;color:inherit;padding:6px 9px;font-size:12px;')} />
+        <select value={type} onChange={(e) => setType(e.target.value)}
+          style={css('flex:1;min-width:110px;background:oklch(0.1 0.05 236);border:1px solid oklch(0.3 0.06 232);border-radius:6px;color:inherit;padding:6px 9px;font-size:12px;')}>
+          {ACCOUNT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+      </div>
+      <div style={css('display:flex;gap:8px;flex-wrap:wrap;align-items:center;')}>
+        <input placeholder="Institution" value={institution} onChange={(e) => setInstitution(e.target.value)}
+          style={css('flex:1;min-width:120px;background:oklch(0.1 0.05 236);border:1px solid oklch(0.3 0.06 232);border-radius:6px;color:inherit;padding:6px 9px;font-size:12px;')} />
+        <label style={css('display:flex;align-items:center;gap:5px;font-size:10.5px;color:oklch(0.6 0.025 228);white-space:nowrap;cursor:pointer;')}>
+          <input type="checkbox" checked={isDebt} onChange={(e) => setIsDebt(e.target.checked)} /> I owe this
+        </label>
+        <div style={css('flex:1;')} />
+        <div className="elo-link-hover" onClick={onCancel} style={css('font-size:10px;font-weight:700;color:oklch(0.5 0.025 228);cursor:pointer;padding:5px 4px;')}>CANCEL</div>
+        <div className="elo-link-hover" onClick={save} style={css('font-size:10px;font-weight:700;color:oklch(0.86 0.17 195);cursor:pointer;padding:5px 4px;')}>SAVE</div>
+      </div>
+    </div>
+  );
+}
+
+function AccountRow({ account, onUpdate, onDelete, dragging, setDragging, onReorder }) {
+  const [editingBalance, setEditingBalance] = useState(false);
+  const [editingFields, setEditingFields] = useState(false);
+  const [balanceInput, setBalanceInput] = useState(String(account.current_balance ?? 0));
+  const saveBalance = () => {
+    const n = parseFloat(balanceInput);
+    if (!isNaN(n)) onUpdate(account.id, { current_balance: n });
+    setEditingBalance(false);
+  };
+
+  if (editingFields) {
+    return (
+      <AccountEditForm
+        account={account}
+        onCancel={() => setEditingFields(false)}
+        onSave={(patch) => { onUpdate(account.id, patch); setEditingFields(false); }}
+      />
+    );
+  }
+
+  return (
+    <div
+      draggable
+      onDragStart={(e) => { e.dataTransfer.setData('text/plain', String(account.id)); setDragging(account.id); }}
+      onDragEnd={() => setDragging(null)}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => { e.preventDefault(); onReorder(Number(e.dataTransfer.getData('text/plain')), account.id); setDragging(null); }}
+      style={css(
+        'display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid oklch(0.28 0.06 232);cursor:grab;' +
+        (dragging === account.id ? 'opacity:0.35;' : 'opacity:1;')
+      )}
+    >
+      <div style={css('color:oklch(0.4 0.02 228);font-size:12px;letter-spacing:-1px;flex-shrink:0;')}>⠿</div>
       <div style={css('flex:1;min-width:0;')}>
         <div style={css('font-size:13px;font-weight:700;')}>{account.name}</div>
         <div style={css('font-size:10px;color:oklch(0.5 0.025 228);')}>
           {TYPE_LABEL[account.type] || account.type}{account.institution ? ' · ' + account.institution : ''}
         </div>
       </div>
-      {editing ? (
+      {editingBalance ? (
         <>
           <input
             autoFocus type="number" step="0.01" value={balanceInput}
             onChange={(e) => setBalanceInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') saveBalance(); if (e.key === 'Escape') setEditingBalance(false); }}
             style={css('width:110px;background:oklch(0.1 0.05 236);border:1px solid oklch(0.5 0.15 204);border-radius:6px;color:inherit;padding:5px 8px;font-size:13px;text-align:right;')}
           />
-          <div className="elo-link-hover" onClick={save} style={css('font-size:10px;font-weight:700;color:oklch(0.86 0.17 195);cursor:pointer;')}>SAVE</div>
+          <div className="elo-link-hover" onClick={saveBalance} style={css('font-size:10px;font-weight:700;color:oklch(0.86 0.17 195);cursor:pointer;')}>SAVE</div>
         </>
       ) : (
         <>
           <div
-            onClick={() => { setBalanceInput(String(account.current_balance ?? 0)); setEditing(true); }}
+            onClick={() => { setBalanceInput(String(account.current_balance ?? 0)); setEditingBalance(true); }}
             style={css('font-size:15px;font-weight:800;cursor:pointer;color:' + (account.is_debt ? 'oklch(0.68 0.19 25)' : 'inherit') + ';white-space:nowrap;')}
           >{account.is_debt ? '-' : ''}{fmtMoney(Math.abs(account.current_balance || 0))}</div>
+          <div className="elo-link-hover" onClick={() => setEditingFields(true)} style={css('font-size:12px;color:oklch(0.5 0.025 228);cursor:pointer;padding:2px 4px;')}>✎</div>
           <div className="elo-link-hover" onClick={() => onDelete(account.id)} style={css('font-size:13px;color:oklch(0.5 0.025 228);cursor:pointer;padding:2px 4px;')}>✕</div>
         </>
       )}
@@ -243,7 +304,8 @@ function CsvImport({
 export default function FinanceTab({
   financeSummary, financeSummaryLoading, financeMigrated,
   financeSubscriptions, financeTransactions,
-  addFinanceAccount, updateFinanceAccount, deleteFinanceAccount,
+  addFinanceAccount, updateFinanceAccount, deleteFinanceAccount, reorderFinanceAccounts,
+  draggingFinanceAccountId, setDraggingFinanceAccountId,
   financeAddAccountOpen, setFinanceAddAccountOpen,
   addFinanceSubscription, deleteFinanceSubscription,
   financeAddSubOpen, setFinanceAddSubOpen,
@@ -320,7 +382,10 @@ export default function FinanceTab({
           {assetAccounts.length === 0 ? (
             <div style={css('color:oklch(0.5 0.025 228);font-size:12px;padding:8px 0;')}>No accounts yet.</div>
           ) : (
-            assetAccounts.map((a) => <AccountRow key={a.id} account={a} onUpdate={updateFinanceAccount} onDelete={deleteFinanceAccount} />)
+            assetAccounts.map((a) => (
+              <AccountRow key={a.id} account={a} onUpdate={updateFinanceAccount} onDelete={deleteFinanceAccount}
+                dragging={draggingFinanceAccountId} setDragging={setDraggingFinanceAccountId} onReorder={reorderFinanceAccounts} />
+            ))
           )}
         </div>
 
@@ -331,7 +396,10 @@ export default function FinanceTab({
           {debtAccounts.length === 0 ? (
             <div style={css('color:oklch(0.5 0.025 228);font-size:12px;padding:8px 0;')}>No debt accounts logged.</div>
           ) : (
-            debtAccounts.map((a) => <AccountRow key={a.id} account={a} onUpdate={updateFinanceAccount} onDelete={deleteFinanceAccount} />)
+            debtAccounts.map((a) => (
+              <AccountRow key={a.id} account={a} onUpdate={updateFinanceAccount} onDelete={deleteFinanceAccount}
+                dragging={draggingFinanceAccountId} setDragging={setDraggingFinanceAccountId} onReorder={reorderFinanceAccounts} />
+            ))
           )}
         </div>
       </div>
