@@ -164,6 +164,74 @@ ALTER TABLE finance_networth_log ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Enable all for public" ON finance_networth_log FOR ALL USING (true) WITH CHECK (true);
 ```
 
+## Real bug, recurred: the Telegram agent leaked internal bookkeeping text again, plus a confusing "yesterday" framing (2026-09-06)
+Elo caught this live via screenshots of the real chat: he tried "check all
+wind down routine and I'm going to bed" around 01:51 -- that part actually
+worked (sub-tasks + bedtime all correctly logged, verified against real
+data below), but the bot's own explanation said the sub-tasks were
+"already all marked done yesterday's session," which reads as wrong/
+confusing even though the underlying data was technically correct. Then,
+separately, saying "woke up" later that morning got back the literal text
+`(Note: proposed but not yet confirmed -- end_sleep({}))` with no Confirm
+button at all -- nothing was logged from that message; the real wake-up
+only got recorded from a later, separate attempt.
+
+**Bug 1, the leaked note -- a recurrence of the 2026-08-29 prompt-injection
+bug (see below), now for `end_sleep` instead of the original `start_sleep`
+case.** The existing `(Note: ...)` wrapper plus the system-prompt
+instruction against echoing it reduced this but evidently didn't eliminate
+it -- the model can still, on some turns, read its own injected history
+note and repeat it back as if it were a fresh reply, with no real tool call
+and therefore no button for Elo to press. Root-caused directly from real
+Supabase data, not guesswork: confirmed via `GET /api/sleep/pending` and
+`GET /api/sleep` that a real pending bedtime genuinely existed at the time
+of the "woke up" message (the eventual real wake only landed ~52 minutes
+later, via a separate successful attempt) -- so this wasn't a case of the
+tool legitimately having nothing to do; the model had everything it needed
+to call `end_sleep` for real and didn't.
+
+**Fix: a code-level safety net, not just a stronger prompt instruction.**
+`lib/agent.js` gained `NOTE_LEAK_PATTERN`, a regex catching this exact
+failure shape (`proposed but not yet confirmed`, `(Note:`). Whenever a
+text-only turn matches it, `runAgentTurn` no longer forwards that text to
+Elo at all -- it retries once with an explicit correction message appended
+("that reply just repeated internal bookkeeping text... actually call the
+right tool or ask a real question"), and only falls back to a generic
+honest "I got confused, try again" reply if the retry *also* fails to
+produce a real answer. If the retry succeeds with a real write tool call,
+that becomes a normal Confirm/Cancel proposal, same as if the model had
+gotten it right the first time. This is deliberately a backstop that
+doesn't depend on the model always following instructions, since the
+instruction-only fix from 2026-08-29 demonstrably wasn't sufficient by
+itself. Also softened the injected note's own phrasing (`by button tap`
+added) to read slightly less like a status line worth repeating, as a
+secondary, complementary layer -- not the primary fix.
+
+**Bug 2, the confusing "yesterday's session" framing.** Real, but much
+smaller -- the underlying data was already correct (`completed_date` and
+`completed_at` were both exactly right, per the day-boundary system), the
+model just explained a `completed_at` that crosses a literal midnight
+boundary badly. Added an explicit system-prompt instruction: a
+`completed_at` timestamp one calendar day after `completed_date` (done
+just after midnight, before bed) is the SAME session from Elo's
+perspective, never "yesterday's" -- describe it as done earlier tonight/
+already done instead.
+
+**Verified as directly as this bug allows, given it's an LLM sampling
+failure that can't be forced deterministically:** confirmed the regex
+matches the exact real leaked string and does not false-positive on a
+normal reply; live-tested `runAgentTurn` against a history containing a
+stale leaked note plus a genuinely real pending bedtime (temporarily
+created via the real `/api/sleep/bedtime` route, then immediately
+cancelled via `/api/sleep/bedtime/cancel` -- confirmed via a fresh
+`GET /api/sleep/pending` that no residue was left) -- confirmed it
+correctly proposed a real `end_sleep` call in that scenario rather than
+leaking, and confirmed the whole file still loads (`node -c`). Could not
+force the original non-deterministic leak itself to prove the retry path
+specifically fires in production; the code-level guard is a defensible,
+reviewed backstop for when it does, not a claim that it's been reproduced
+end-to-end.
+
 ## Real bug: the bedtime-aware day boundary went stale a day after waking (2026-09-04)
 Elo hit this live, past midnight into Sep 4, hadn't gone to bed yet: HOME's
 habits had already reset (all unchecked) and NUTRITION was already
