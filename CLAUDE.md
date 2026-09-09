@@ -164,6 +164,108 @@ ALTER TABLE finance_networth_log ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Enable all for public" ON finance_networth_log FOR ALL USING (true) WITH CHECK (true);
 ```
 
+## Missed-bedtime grace window (5am cutoff) + a real way to backfill a forgotten night (2026-09-08)
+Elo hit the flip side of the 2026-09-04 fix (pin the effective day at the
+last real wake-up, indefinitely, until a new bedtime click): he genuinely
+forgot to log sleep one night entirely -- no bedtime click at all. Waking up
+the next morning, the dashboard was still frozen on the PREVIOUS day
+(correct per that fix's letter, since no bedtime click had happened), so he
+had to click "went to bed" then immediately "woke up" just to force a
+refresh, and manually guess the hours. His own fix, stated directly: keep
+deferring through the night same as before (that's the legitimate "still
+up late, might still go to bed" case), but once it's gotten to be the next
+morning -- his words, "all the way to 5am the next morning" -- stop waiting
+and just advance for real. Separately: the Telegram bot should proactively
+ask the next morning if a night never got logged, and be able to actually
+record it once he answers with rough times.
+
+**1. `lib/habitDay.js`'s "no pending bedtime" branch gained a grace cutoff.**
+Previously: pin at the last wake-up's date, forever, no expiration.
+Now: pin at the last wake-up's date UNLESS it's already past
+`MISSED_BEDTIME_GRACE_HOUR` (5am, mirroring but intentionally distinct from
+`nightOfDate()`'s own ~6am threshold in `server.js` -- that one describes a
+REAL bedtime that did happen, this one exists specifically to stop waiting
+on one that might never come) on the calendar day right after that wake, or
+any day beyond that -- in which case it falls through to the real literal
+calendar date instead, same as an ordinary reset. Verified against real
+production data plus pure boundary-math unit tests (can't manipulate real
+wall-clock time to hit the exact 5am edge against the live DB): temporarily
+set the real most-recent `sleep_log` row's `wake_time` to 1 day back and to
+2 days back, confirmed `/api/today` correctly flipped to the real calendar
+date in both (it was already past 5pm real time during this test, well
+past the cutoff); a standalone script replicating the exact formula
+confirmed 2am and 4:59am next-day both still correctly defer, and 5:00am
+exactly is the precise moment it flips. Real data restored to its exact
+original values immediately after the DB-based tests.
+
+**2. New `POST /api/sleep/log-missed-night` (`server.js`) backfills a night
+that was never logged in real time at all** -- distinct from the existing
+bed/wake CLICK flow, which only ever means "right now." Takes
+`logged_date` (which night) plus `bed_time`/`wake_time` as 24-hour "HH:MM"
+strings (Elo's own words were "roughly," so this was never going to be
+exact timestamps) and turns them into real calendar timestamps server-side:
+a bed_time hour under 6 lands on `logged_date + 1` (same night-of
+convention as `nightOfDate()`), wake_time is always the morning after
+regardless of hour, hours computed from the two, rejected outright if that
+works out to <=0 or >20 hours (a real sanity check, not just accepted
+blindly -- caught a deliberately adversarial test input, bed 12:00/wake
+12:05, correctly computing to 24.1h and refusing it). Same one-row-per-
+`logged_date` dedupe as the existing wake route, so re-running this to
+correct an earlier guess just updates in place.
+
+**3. New Telegram tool, `log_missed_sleep` (`lib/tools.js`)** -- the
+agent's own system prompt (`lib/agent.js`) now explicitly says
+start_sleep/end_sleep only ever mean "right now," and to use this instead,
+converting whatever rough time Elo gives into HH:MM, whenever he's
+describing a past night he never logged at all.
+
+**4. New proactive nudge, 8am daily (`lib/scheduler.js`'s
+`missedSleepCheck`)** -- if last night (by real calendar date) has no
+matching `sleep_log` row and no bedtime is currently pending, asks exactly
+what Elo described: "what time did you go to bed... and what time did you
+wake up... roughly is fine." Only ever asks about the single most recent
+possible gap -- if ignored, tomorrow's run asks about the NEW yesterday
+instead of re-asking about the same missed night forever, so this can't
+spiral into repeat nagging. Silent if there's no sleep history at all yet
+(a fresh install shouldn't be told it "missed" a night on day one).
+
+**Real, non-obvious bug this surfaced and fixed along the way:** every
+existing scheduled nudge (`eveningCheckIn`, `foodReminder`, the older
+morning stale-task nudge) sends via a bare `bot.telegram.sendMessage(...)`
+that was NEVER recorded into `conversationHistory` -- harmless for those,
+since a reply to "you have open habits" doesn't need the bot to remember
+asking. This one is different: a bare reply like "around 11 and 7" is
+meaningless without knowing which night it's answering, and the agent's
+`runAgentTurn` only ever sees `history` + the new message -- if the nudge
+itself was never in there, there'd be no way to resolve it correctly.
+Fixed by threading a second callback through `startSchedules` (`sendMessageTo`
+unchanged for the other three nudges, new `recordMessageTo` for this one)
+that both sends AND pushes the exact sent text into `conversationHistory`
+as a real assistant turn (not a `(Note: ...)` bookkeeping wrapper -- this is
+genuinely what the bot said, verbatim). Verified directly: called
+`runAgentTurn("around 11 and 7", history)` with a history containing only
+the nudge's own text and nothing else, and it correctly resolved
+`logged_date` to the exact date named in that nudge -- proving the wiring,
+not just the tool itself, actually works.
+
+**Real testing mistake made and disclosed, not hidden:** while testing the
+new backfill route, a "safe-looking" test date (`logged_date: "2026-09-05"`)
+actually collided with a REAL row (id 28, from the 2026-09-06 Telegram
+note-leak investigation earlier this file) via the same dedupe-by-date
+logic the route relies on -- overwrote its real `bed_time`/`wake_time`/
+`hours` with test values before the collision was noticed. Caught
+immediately (checked the row after the second test call, not after moving
+on), restored `bed_time`/`wake_time`/`logged_date` to their exact known
+real values (both were on record earlier in this same conversation) and
+recomputed `hours` precisely from those real timestamps (9.2h). **One field
+could not be restored with certainty: `quality`** -- its original value
+was never captured anywhere on record before this incident, so it's been
+left `null` (unknown) rather than guessed. If Elo remembers what he rated
+that night's sleep (or the 2026-09-06 wake-up), it's worth telling me so
+that row can be corrected via `PUT /api/sleep/28`. Every subsequent test
+after catching this used an unambiguous throwaway date (`2020-01-01`) and
+was deleted afterward, confirmed via a fresh `GET`.
+
 ## Real bug, recurred: the Telegram agent leaked internal bookkeeping text again, plus a confusing "yesterday" framing (2026-09-06)
 Elo caught this live via screenshots of the real chat: he tried "check all
 wind down routine and I'm going to bed" around 01:51 -- that part actually

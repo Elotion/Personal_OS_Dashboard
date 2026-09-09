@@ -837,6 +837,72 @@ app.put('/api/sleep/:id', (req, res) => {
   handle(res, supabase.from('sleep_log').update(req.body).eq('id', req.params.id).select());
 });
 
+function parseHHMM(str) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(str || '').trim());
+  if (!m) return null;
+  const h = parseInt(m[1], 10), min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return { h, min };
+}
+
+// Backdates a night that was never logged in real time at all -- distinct
+// from the bed/wake CLICK flow above, which only ever knows "right now."
+// Added 2026-09-08 alongside the missed-bedtime grace window in
+// lib/habitDay.js -- once that window auto-advances the day on a forgotten
+// bedtime, this is how the actual night gets a real (approximate, since
+// Elo's own words were "roughly") record instead of staying a permanent
+// gap. bed_time/wake_time are 24-hour "HH:MM" clock times, not full
+// timestamps -- Elo (or the Telegram agent relaying his rough answer)
+// supplies those, this route is the one place that turns them into real
+// calendar timestamps, same "server computes it" convention as the rest of
+// this file. logged_date is which NIGHT this is for (the night-of label,
+// e.g. "went to bed 9/7, woke up 9/8" -> logged_date "2026-09-07") --
+// mirrors nightOfDate()'s own 6am threshold for whether a given bed_time
+// clock hour belongs to logged_date itself or already rolled into the next
+// calendar day; wake_time is always the morning after, regardless of hour.
+app.post('/api/sleep/log-missed-night', async (req, res) => {
+  const { logged_date, bed_time, wake_time, quality } = req.body;
+  if (!logged_date) return res.status(400).json({ error: 'logged_date is required' });
+  const bed = parseHHMM(bed_time);
+  const wake = parseHHMM(wake_time);
+  if (!bed || !wake) return res.status(400).json({ error: 'bed_time and wake_time must be 24-hour "HH:MM" strings' });
+
+  const [y, mo, d] = logged_date.split('-').map(Number);
+  const bedDate = new Date(y, mo - 1, d + (bed.h < 6 ? 1 : 0), bed.h, bed.min);
+  const wakeDate = new Date(y, mo - 1, d + 1, wake.h, wake.min);
+  const hours = Math.round(((wakeDate.getTime() - bedDate.getTime()) / 3600000) * 10) / 10;
+  if (hours <= 0 || hours > 20) {
+    return res.status(400).json({ error: 'That works out to ' + hours + ' hours, which is not a realistic night -- double check the bed/wake times.' });
+  }
+
+  const row = {
+    bed_time: localTimestampStr(bedDate), wake_time: localTimestampStr(wakeDate),
+    hours, quality: quality || null, logged_date,
+  };
+
+  // Same one-row-per-logged_date dedupe as POST /api/sleep/wake -- lets this
+  // route be re-run to correct an earlier guess instead of stacking a
+  // second row for the same night.
+  const existingResult = await supabase.from('sleep_log').select('id')
+    .eq('logged_date', logged_date).order('id', { ascending: false }).limit(1);
+  if (existingResult.error) {
+    if (missingTable(existingResult.error, 'sleep_log')) return res.status(404).json({ error: 'sleep_log table does not exist yet' });
+    console.error(existingResult.error);
+    return res.status(400).json({ error: existingResult.error.message });
+  }
+  const existing = existingResult.data[0];
+
+  const writeResult = existing
+    ? await supabase.from('sleep_log').update(row).eq('id', existing.id).select()
+    : await supabase.from('sleep_log').insert([row]).select();
+  if (writeResult.error) {
+    if (missingTable(writeResult.error, 'sleep_log')) return res.status(404).json({ error: 'sleep_log table does not exist yet' });
+    console.error(writeResult.error);
+    return res.status(400).json({ error: writeResult.error.message });
+  }
+  res.json(writeResult.data[0]);
+});
+
 app.delete('/api/sleep/:id', (req, res) => {
   handle(res, supabase.from('sleep_log').delete().eq('id', req.params.id));
 });
