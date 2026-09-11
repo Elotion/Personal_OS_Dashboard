@@ -164,6 +164,41 @@ ALTER TABLE finance_networth_log ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Enable all for public" ON finance_networth_log FOR ALL USING (true) WITH CHECK (true);
 ```
 
+## HOME's CALENDAR now shows which Google calendar an event belongs to (2026-09-11)
+Elo, a preference edit: an event like "Get U-Haul" (real, on his EVENTS
+calendar) rendered with no indication of which calendar/category it
+belonged to (Work/School/Events/...) -- he wanted that visible between the
+time and the description specifically, so the category reads before the
+description does, not after.
+
+**Root cause: the live-fetch path already knew the calendar name and threw
+it away before it ever reached the frontend.** `listEventsForDate()`
+(`lib/google.js`) queries every visible Google calendar and already has
+`cal.name` in hand per event -- it's even persisted into
+`calendar_events_log` via `toStorableRow()` a few lines later in the same
+function. But the function's OWN return value, built from a
+`events.map(({ time, label }) => ...)` at the very end, only ever kept
+`time`/`label` -- `calendarName` was computed, used for the history log,
+and then silently dropped on the one path HOME's live CALENDAR card
+actually reads. Fixed by carrying `calendarName` through both the
+intermediate `events.push(...)` and the final `.map()`.
+
+**Frontend (`HomeTab.js`):** each event row now renders a small colored
+pill between the time and the label -- `ev.calendarName.toUpperCase()`,
+color chosen by a simple string hash into a small fixed palette
+(`categoryColor()`), not a hardcoded name→color lookup, since Elo's real
+Google calendar list (Work, School, Events, Family, Birthdays/
+Anniversaries, ...) isn't fixed or fully known here and a lookup table
+would need editing every time he adds or renames a calendar -- any real
+calendar name gets a consistent (if arbitrary) color automatically instead.
+
+Verified against the real event Elo named: `GET /api/calendar/events?
+date=2026-09-12` now returns `{time: "09:00 – 12:00", label: "Get U-Haul",
+calendarName: "Events"}`; live-browser-tested by navigating HOME's
+CALENDAR to that real date and confirming the row renders exactly
+`09:00 – 12:00` -> `EVENTS` badge -> `Get U-Haul`, in that order, with no
+console errors.
+
 ## Missed-bedtime grace window (5am cutoff) + a real way to backfill a forgotten night (2026-09-08)
 Elo hit the flip side of the 2026-09-04 fix (pin the effective day at the
 last real wake-up, indefinitely, until a new bedtime click): he genuinely

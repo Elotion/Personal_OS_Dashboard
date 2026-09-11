@@ -47,6 +47,24 @@ const PARTICLE_COLORS = [
   'oklch(0.8 0.19 200)', 'oklch(0.92 0.1 198)',
 ];
 
+// A small fixed palette for the CALENDAR category badge (2026-09-11, Elo:
+// "I want to know... which category of calendar it is" -- Work/School/
+// Events/etc.). Deliberately not hardcoded to specific calendar names --
+// Elo's own Google Calendar list (Work, School, Events, Family, Birthdays/
+// Anniversaries, ...) isn't fixed or fully known here, so any real calendar
+// name gets a consistent color via a simple string hash instead of needing
+// a name added to a lookup table every time he adds/renames a calendar.
+const CATEGORY_COLORS = [
+  'oklch(0.75 0.16 90)', 'oklch(0.7 0.18 150)', 'oklch(0.72 0.15 165)',
+  'oklch(0.62 0.2 235)', 'oklch(0.75 0.16 60)', 'oklch(0.68 0.19 25)',
+  'oklch(0.8 0.19 200)',
+];
+function categoryColor(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  return CATEGORY_COLORS[Math.abs(hash) % CATEGORY_COLORS.length];
+}
+
 // Builds the FINANCE PULSE sparkline from REAL logged net-worth history
 // (finance_networth_log, one row per calendar day -- see GET
 // /api/finance/summary), all-time, not a recent window -- Elo wants the
@@ -910,8 +928,14 @@ export default function HomeTab(props) {
                     <div style={css('flex:1;height:1px;background:oklch(0.86 0.17 195 / 0.55);box-shadow:0 0 6px oklch(0.86 0.17 195 / 0.6);')} />
                   </div>
                 ) : (
-                  <div key={'ev' + i} style={css('display:flex;gap:14px;padding-bottom:12px;border-bottom:1px solid oklch(0.52 0.15 208);flex-shrink:0;')}>
+                  <div key={'ev' + i} style={css('display:flex;align-items:center;gap:10px;padding-bottom:12px;border-bottom:1px solid oklch(0.52 0.15 208);flex-shrink:0;')}>
                     <div style={css('font-size:13px;font-weight:600;color:oklch(0.6 0.025 228);width:112px;flex-shrink:0;')}>{ev.time}</div>
+                    {ev.calendarName && (
+                      <div style={css(
+                        'font-size:9px;font-weight:700;letter-spacing:0.04em;padding:3px 7px;border-radius:20px;flex-shrink:0;white-space:nowrap;' +
+                        'background:' + categoryColor(ev.calendarName).replace(')', ' / 0.14)') + ';border:1px solid ' + categoryColor(ev.calendarName) + ';color:' + categoryColor(ev.calendarName) + ';'
+                      )}>{ev.calendarName.toUpperCase()}</div>
+                    )}
                     <div style={css('font-size:14.5px;font-weight:500;')}>{ev.label}</div>
                   </div>
                 )
